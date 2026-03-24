@@ -1,7 +1,17 @@
-node_modules
+node_modules/
+.qodo
 # Keep environment variables out of version control
 .env
 
-/src/generated/prisma
 
-/src/generated/prisma
+# Build output
+dist/
+build/
+
+# IDE specific files
+.vscode/        # VS Code configuration files
+.idea/          # JetBrains IDE configuration files
+*.swp
+.DS_Store       # macOS system files
+Thumbs.db       # Windows system files
+package-lock.json
