@@ -560,7 +560,6 @@ export const createDesignation = async (req: Request, res: Response) => {
     const designation = await prisma.designation.create({
       data: {
         name,
-        code,
         tenantId,
         departmentId,
       },
