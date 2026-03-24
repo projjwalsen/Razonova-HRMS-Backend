@@ -1,0 +1,215 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+enum TenantStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Tenant { // COMPANY
+  id        String   @id @default(uuid())
+  name      String
+
+  status    TenantStatus  @default(PENDING) //🔥 WAIT FOR APPROVAL
+  isActive  Boolean  @default(true)
+  isSystem  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+  roles     Role[]
+  organization Organization[]
+  settings   Setting[]
+  departments Department[]
+  designations Designation[]
+  tenantSubscription TenantSubscription[]
+}
+
+enum RoleType {
+  SYSTEM
+  TENANT
+}
+model Role {
+  id        String   @id @default(uuid())
+  name      String
+  type      RoleType
+  tenantId  String?
+  tenant    Tenant?   @relation(fields: [tenantId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userRoles UserRole[]
+  rolePermissions RolePermission[]
+
+  @@unique([name, tenantId]) // Ensure role names are unique within a tenant
+}
+
+model Permission {
+  id        String   @id @default(uuid())
+
+  name      String   @unique
+  module    String?   // e.g., EMPLOYEE_MANAGEMENT
+  action    String?   // e.g., CREATE, READ, UPDATE, DELETE
+  
+  createdAt DateTime @default(now())
+
+  roles     RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  phone     String?  @unique
+  password  String
+
+  tenantId  String?
+  tenant    Tenant?   @relation(fields: [tenantId], references: [id]) // COMPANY
+
+  departmentId String?
+  department   Department? @relation("DepartmentUsers", fields: [departmentId], references: [id])
+  managedDepartment Department[] @relation("DepartmentManager")
+
+  designationId String?
+  designation   Designation? @relation(fields: [designationId], references: [id])
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userRoles UserRole[]
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String
+  roleId    String
+  user      User     @relation(fields: [userId], references: [id])
+  role      Role     @relation(fields: [roleId], references: [id])
+  @@unique([userId, roleId])
+}
+
+// model ManagerProfile {
+//   id       String   @id @default(uuid())
+//   userId    String   @unique
+//   teamSize Int?
+//   user      User     @relation(fields: [userId], references: [id])
+// }
+
+model Organization {
+  id       String   @id @default(uuid())
+  tenantId String
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+
+  name     String
+  logoUrl  String?
+  industry  String?
+  companySize String?
+
+  //Address
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  country      String?
+  pinCode   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Setting {
+  id        String   @id @default(uuid())
+
+  tenantId  String?
+  tenant    Tenant?   @relation(fields: [tenantId], references: [id])
+
+  key       String
+  value     Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, key])
+}
+
+model Department {
+  id       String   @id @default(uuid())
+  name     String
+  tenantId String
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+
+  managerId String?
+  manager    User?    @relation("DepartmentManager", fields: [managerId], references: [id])
+  
+  users      User[]   @relation("DepartmentUsers")
+  designations Designation[]
+
+  @@unique([name, tenantId]) // Ensure department names are unique within a tenant
+}
+
+model Designation {
+  id           String      @id @default(uuid())
+  name         String      // e.g., HR, Manager, Team Lead, Accountant
+
+  tenantId     String
+  tenant       Tenant      @relation(fields: [tenantId], references: [id])
+  
+  departmentId String?     // optional if designation belongs to a department
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  users        User[]      // users holding this designation
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([name, tenantId]) // unique designation names per tenant
+}
+
+model SubscriptionPlan {
+  id          String   @id @default(uuid())
+  name        String   @unique // e.g., Free, Basic, Pro, Enterprise
+  price       Float?
+  isFree      Boolean  @default(false)
+  
+  maxUsers    Int?     // null for unlimited
+  features    Json?
+  createdAt   DateTime @default(now())
+
+  tenantSubscriptions TenantSubscription[]
+}
+
+model TenantSubscription {
+  id          String   @id @default(uuid())
+
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  
+  planId      String
+  plan        SubscriptionPlan @relation(fields: [planId], references: [id])
+  
+  startDate   DateTime
+  endDate     DateTime?
+  isActive    Boolean  @default(true)
+
+  @@index([tenantId, isActive])
+}

@@ -1,0 +1,5 @@
+-- CreateEnum
+CREATE TYPE "TenantStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+
+-- AlterTable
+ALTER TABLE "Tenant" ADD COLUMN     "status" TEXT NOT NULL DEFAULT 'PENDING';
