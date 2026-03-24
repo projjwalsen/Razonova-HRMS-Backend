@@ -186,7 +186,6 @@ export const signup = async (req: Request, res: Response) => {
                 name: "HR Manager",
                 tenantId: result.tenant.id,
                 departmentId: hrDepartment.id,
-                roleId: adminRole.id,
                 },
             });
 
