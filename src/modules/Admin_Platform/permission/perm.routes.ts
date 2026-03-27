@@ -1,31 +1,29 @@
 import { Router } from "express";
 import * as permController from "./perm.controller";
-import { auth } from "../../../core/middleware/auth";
+import { auth, checkPermission } from "../../../core/middleware/auth";
 import { isPlatformAdmin } from "../../../core/middleware/platform.auth";
 
 const router = Router();
 /* ------ Only Platform Admins 🔐 ------ */
+router.use(auth);
 router.post(
     "/create", 
-    auth,
     isPlatformAdmin,
-
+    checkPermission("PERMISSION:CREATE"),
     permController.createPermission
 );
 router.get(
     "/list",
-    auth,
     permController.getPermissions
 );
 router.put(
     "/update/:permId", 
-    auth,
+    checkPermission("PERMISSION:UPDATE"),
     isPlatformAdmin,
     permController.updatePermission
 );
 router.delete(
     "/delete/:permId",
-    auth,
     isPlatformAdmin,
     permController.deletePermission
 );
