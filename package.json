@@ -6,10 +6,10 @@
   "scripts": {
     "dev": "tsx --watch -r tsconfig-paths/register src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "tsx -r tsconfig-paths/register src/server.ts"
   },
   "keywords": [],
-  "author": "",
+  "author": "Soumalya-Chakraborty",
   "license": "ISC",
   "type": "module",
   "devDependencies": {

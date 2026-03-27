@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../../config/db/prisma";
-import { uploadToS3 } from "../../config/s3/s3.config";
-import { tr } from "zod/v4/locales";
+import { deleteFromS3, uploadToS3 } from "../../config/s3/s3.config";
+import { DepartmentPolicy } from "../../core/policies/departmnt.policy";
 
 /**
  * @swagger
@@ -172,6 +172,151 @@ export const getOrganizationInfo = async (req: Request, res: Response) => {
         });
     }
 };
+
+/**
+ * @swagger
+ * /org/info/{orgId}:
+ *   patch:
+ *     tags:
+ *       - organization
+ *     summary: Update organization info
+ *     description: Update organization details including logo. If a new logo is provided, the old one will be deleted.
+ *     parameters:
+ *       - in: path
+ *         name: orgId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: Organization ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               industry:
+ *                 type: string
+ *               companySize:
+ *                 type: string
+ *               addressLine1:
+ *                 type: string
+ *               addressLine2:
+ *                 type: string
+ *               city:
+ *                 type: string
+ *               state:
+ *                 type: string
+ *               country:
+ *                 type: string
+ *               pinCode:
+ *                 type: string
+ *                 format: binary
+ *                 description: New organization logo file
+ *     responses:
+ *       200:
+ *         description: Organization updated successfully
+ *       403:
+ *         description: Unauthorized
+ *       404:
+ *         description: Organization not found
+ *       500:
+ *         description: Internal server error
+ */
+export const updateOrganizationInfo = async (req: Request, res: Response) => {
+    try {
+        const { orgId } = (req as any).params;
+        const actor = (req as any).user; // Assuming auth middleware sets req.user
+        const tenantId = actor.tenantId;
+        const {
+            name,
+            industry,
+            companySize,
+            addressLine1,
+            addressLine2,
+            city,
+            state,
+            country,
+            pinCode
+        } = req.body;
+        let logoUrl: string | undefined = undefined;
+        if (!orgId) {
+            return res.status(400).json({
+                status: false,
+                message: "Organization ID is required"
+            });
+        }
+        if(!tenantId){
+            return res.status(400).json({
+                status: false,
+                message: "Tenant ID is required"
+            });
+        }
+        const existingOrg = await prisma.organization.findUnique({
+            where: { id: orgId }
+        });
+        if (!existingOrg) {
+            return res.status(404).json({
+                status: false,
+                message: "Organization not found"
+            });
+        }
+        if(existingOrg.tenantId !== tenantId){
+            return res.status(403).json({
+                status: false,
+                message: "You do not have permission to update this organization info"
+            });
+        }
+
+        let updateData: any = {
+            ...(name && { name }),
+            ...(industry && { industry }),
+            ...(companySize && { companySize }),
+            ...(addressLine1 && { addressLine1 }),
+            ...(addressLine2 && { addressLine2 }),
+            ...(city && { city }),
+            ...(state && { state }),
+            ...(country && { country }),
+            ...(pinCode && { pinCode }),
+        }
+
+        if(req.file){
+            if(existingOrg.logoUrl){
+                try {
+                    await deleteFromS3(existingOrg.logoUrl);
+                } catch (error) {
+                    throw new Error("Failed to delete existing logo from S3: " + (error as Error).message);
+                }
+            }
+            logoUrl = await uploadToS3(
+                req.file,
+                existingOrg.tenantId,
+                "company-logos"
+            );
+            updateData.logoUrl = logoUrl;
+        }
+
+        const organizations = await prisma.organization.update({
+            where: { id: orgId },
+            data: updateData,
+            include: { tenant: true }
+        });
+        return res.status(200).json({
+            status: true,
+            message: "Organization info updated successfully",
+            data: organizations
+        })
+
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to update organization info",
+            error: error.message
+        });
+    }
+}
 
 /**
  * @swagger
@@ -407,72 +552,10 @@ export const getAllDepartments = async (req: Request, res: Response) => {
     }
 }
 
-/**
- * @swagger
- * /org/department/{id}:
- *   patch:
- *     tags:
- *       - organization
- *     summary: Update department
- *     description: Update department details for a tenant.
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: Department ID
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *                 description: Department name
- *     responses:
- *       200:
- *         description: Department updated successfully
- *       400:
- *         description: Bad request
- */
-export const updateDepartment = async (req: Request, res: Response) => {
-    try {
-        const tenantId = (req as any).user.tenantId;
-        const { id } = (req as any).params;
-        const { name } = req.body;
-
-        if (!name) {
-            return res.status(400).json({
-                status: false,
-                message: "Department name is required"
-            });
-        }
-
-        const department = await prisma.department.update({
-            where: { id },
-            data: { name }
-        });
-
-        res.status(200).json({
-            status: true,
-            message: "Department updated successfully",
-            data: department
-        });
-    } catch (error: any) {
-        res.status(500).json({
-            status: false,
-            message: "Failed to update department",
-            error: (error as Error).message
-        });
-    }
-}
 
 /**
  * @swagger
- * /org/department/{id}:
+ * /org/department/delete/{id}:
  *   delete:
  *     tags:
  *       - organization
@@ -687,3 +770,180 @@ export const deleteDesignation = async (req: Request, res: Response) => {
     res.status(500).json({ status: false, message: err.message });
   }
 };
+
+/**
+ * @swagger
+ * /org/department/update/{departmentId}:
+ *   patch:
+ *     tags:
+ *       - organization
+ *     summary: Assign department lead and/or update department name
+ *     description: Update a department by assigning a manager (lead) and/or changing the department name. Validates that the manager exists, is active, and belongs to the department.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: departmentId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: Department ID to update
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: New department name (optional, must be unique within tenant)
+ *                 example: "Engineering"
+ *               managerId:
+ *                 type: string
+ *                 nullable: true
+ *                 description: User ID to assign as department lead (optional, can be null to remove lead)
+ *                 example: "usr_123abc"
+ *     responses:
+ *       200:
+ *         description: Department updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Department lead assigned successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     tenantId:
+ *                       type: string
+ *                     managerId:
+ *                       type: string
+ *                     manager:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         name:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *       400:
+ *         description: Bad request (invalid parameters)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Department ID is required"
+ *       403:
+ *         description: Forbidden (authorization failed)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 code:
+ *                   type: string
+ *                   example: "DUPLICATE_DEPARTMENT"
+ *                 message:
+ *                   type: string
+ *                   example: "Department with this name already exists"
+ *       404:
+ *         description: Department not found
+ *       500:
+ *         description: Internal server error
+ */
+export const updateDepartment = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const { departmentId } = (req as any).params;
+        const { name, managerId } = req.body;
+
+        if(!departmentId){
+            return res.status(400).json({
+                status: false,
+                message: "Department ID is required"
+            });
+        }
+        if(name !== undefined && typeof name !== "string"){
+            return res.status(400).json({
+                status: false,
+                message: "Invalid designation name must be string"
+            });
+        }
+        if(managerId !== undefined && typeof managerId !== "string"){
+            return res.status(400).json({
+                status: false,
+                message: "Invalid managerId must be string"
+            });
+        }
+
+        const decision = await DepartmentPolicy.canUpdateDepartment(actor, departmentId, { name, managerId });
+        if(!decision.allowed){
+            return res.status(403).json({
+                status: false,
+                code: decision.code,
+                message: decision.message || "You do not have permission to assign department lead"
+            });
+        }
+
+        const updatedDepartment = await prisma.department.update({
+            where: { id: departmentId },
+            data: { 
+                ...(name !== undefined ? { name: name.trim() } : {}),
+                ...(managerId !== undefined ? { managerId } : {}),
+            },
+            select: {
+                id: true,
+                name: true,
+                tenantId: true,
+                managerId: true,
+                manager: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true
+                    }
+                }
+            }
+        });
+
+        if(!updatedDepartment){
+            return res.status(404).json({
+                status: false,
+                message: "Department not found"
+            });
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Department lead assigned successfully",
+            data: updatedDepartment
+        });
+
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to assign department lead",
+            error: (error as Error).message
+        });
+    }
+}
