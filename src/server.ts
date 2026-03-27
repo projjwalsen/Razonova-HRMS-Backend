@@ -25,168 +25,62 @@ app.get('/health', (req, res) => {
 
 
 // Seed normal Super Admin user and SYSTEM role (POST /seed-super-admin)
-// app.get('/seed-super-admin', async (req, res) => {
-// 	try {
-// 		console.log("🚀 Starting platform seed...");
+// async function main() {
+//   // 1. Add new permissions (skipDuplicates: true ensures no duplicates)
+//   const newPermissions = [
+//     { name: "Read User", scope: RoleType.TENANT, module: "REPORTING", action: "READ" },
+//     { name: "Update Reporting Manager", scope: RoleType.TENANT, module: "REPORTING", action: "MANAGER_UPDATE" },
+//   ];
 
-// 		// 🔥 STEP 0: MIGRATE OLD SYSTEM TENANT (if exists)
-// 		const systemTenant = await prisma.tenant.findFirst({
-// 			where: { isSystem: true },
-// 		});
+//   await prisma.permission.createMany({
+//     data: newPermissions,
+//     skipDuplicates: true,
+//   });
 
-// 		if (systemTenant) {
-// 			console.log("⚠️ Migrating SYSTEM tenant data...");
+//   // 2. Fetch all tenants and the new permissions
+//   const tenants = await prisma.tenant.findMany({ select: { id: true } });
+//   const permissions = await prisma.permission.findMany({
+//     where: {
+//       module: "REPORTING",
+//       action: { in: ["READ", "MANAGER_UPDATE"] },
+//       scope: RoleType.TENANT,
+//     }
+//   });
 
-// 			// Move users → platform (tenantId = null)
-// 			await prisma.user.updateMany({
-// 			where: { tenantId: systemTenant.id },
-// 			data: { tenantId: null },
-// 			});
+//   // 3. For each tenant, assign new permissions to COMPANY_ADMIN
+//   for (const tenant of tenants) {
+//     const companyAdminRole = await prisma.role.findFirst({
+//       where: {
+//         name: "COMPANY_ADMIN",
+//         type: RoleType.TENANT,
+//         tenantId: tenant.id,
+//       }
+//     });
+//     if (!companyAdminRole) continue;
 
-// 			// Move roles → platform (tenantId = null)
-// 			await prisma.role.updateMany({
-// 			where: {
-// 				tenantId: systemTenant.id,
-// 				type: RoleType.SYSTEM,
-// 			},
-// 			data: { tenantId: null },
-// 			});
+//     const rolePermissionData = permissions.map((p) => ({
+//       roleId: companyAdminRole.id,
+//       permissionId: p.id,
+//     }));
 
-// 			console.log("✅ SYSTEM tenant migration done");
+//     await prisma.rolePermission.createMany({
+//       data: rolePermissionData,
+//       skipDuplicates: true,
+//     });
+//   }
 
-// 			// OPTIONAL: delete system tenant (only if safe)
-// 			// await prisma.tenant.delete({ where: { id: systemTenant.id } });
-// 		}
+//   console.log("Seeded user permissions and mapped to COMPANY_ADMIN for all tenants.");
+// }
 
-// 		// ✅ STEP 1: Create Permissions
-// 		const permissions = [
-// 			"BILLING_VIEW",
-// 			"BILLING_MANAGE",
-// 			"AUDIT_VIEW",
-// 			"COMPANY_APPROVE",
-// 			"SUPPORT_IMPERSONATE",
-// 			"ANALYTICS_VIEW",
-// 		];
-
-// 		const permissionMap: Record<string, string> = {};
-
-// 		for (const name of permissions) {
-// 			const p = await prisma.permission.upsert({
-// 			where: { name },
-// 			update: {},
-// 			create: { name },
-// 			});
-
-// 			permissionMap[name] = p.id;
-// 		}
-
-// 		console.log("✅ Permissions seeded");
-
-// 		// ✅ STEP 2: Create SYSTEM Roles
-// 		const roles = [
-// 			"SUPER_ADMIN",
-// 			"FINANCE_ADMIN",
-// 			"AUDIT_ADMIN",
-// 			"REVIEW_ADMIN",
-// 			"SUPPORT_ADMIN",
-// 		];
-
-// 		const roleMap: Record<string, string> = {};
-
-// 		for (const roleName of roles) {
-// 			let role = await prisma.role.findFirst({
-// 			where: {
-// 				name: roleName,
-// 				type: RoleType.SYSTEM,
-// 			},
-// 			});
-
-// 			if (!role) {
-// 				role = await prisma.role.create({
-// 					data: {
-// 					name: roleName,
-// 					type: RoleType.SYSTEM,
-// 					tenantId: null,
-// 					},
-// 				});
-// 			}
-// 			// 🔥 FIX
-//   			roleMap[roleName] = role.id;
-// 		}
-
-// 		console.log("✅ Roles seeded");
-
-// 		// ✅ STEP 3: Role → Permission Mapping
-// 		const ROLE_PERMISSIONS: Record<string, string[]> = {
-// 			SUPER_ADMIN: permissions,
-
-// 			FINANCE_ADMIN: ["BILLING_VIEW", "BILLING_MANAGE"],
-// 			AUDIT_ADMIN: ["AUDIT_VIEW"],
-// 			REVIEW_ADMIN: ["COMPANY_APPROVE"],
-// 			SUPPORT_ADMIN: ["SUPPORT_IMPERSONATE"],
-// 		};
-
-// 		for (const roleName in ROLE_PERMISSIONS) {
-// 			const roleId = roleMap[roleName];
-
-// 			for (const perm of ROLE_PERMISSIONS[roleName]) {
-// 			await prisma.rolePermission.upsert({
-// 				where: {
-// 				roleId_permissionId: {
-// 					roleId,
-// 					permissionId: permissionMap[perm],
-// 				},
-// 				},
-// 				update: {},
-// 				create: {
-// 				roleId,
-// 				permissionId: permissionMap[perm],
-// 				},
-// 			});
-// 			}
-// 		}
-
-// 		console.log("✅ Role-Permission mapping done");
-
-// 		// ✅ STEP 4: Create / Update Super Admin User
-// 		const user = await prisma.user.upsert({
-// 			where: { email: "razonova@hrms.com" },
-// 			update: {
-// 			tenantId: null, // 🔥 ensure platform user
-// 			},
-// 			create: {
-// 			name: "Razonova",
-// 			email: "razonova@hrms.com",
-// 			password: await bcrypt.hash("Razonova@2025", 10), // ⚠️ hash in real app
-// 			tenantId: null,
-// 			isActive: true,
-// 			},
-// 		});
-
-// 		console.log("✅ Super Admin user ready");
-
-// 		// ✅ STEP 5: Assign SUPER_ADMIN Role
-// 		await prisma.userRole.upsert({
-// 			where: {
-// 			userId_roleId: {
-// 				userId: user.id,
-// 				roleId: roleMap["SUPER_ADMIN"],
-// 			},
-// 			},
-// 			update: {},
-// 			create: {
-// 			userId: user.id,
-// 			roleId: roleMap["SUPER_ADMIN"],
-// 			},
-// 		});
-
-// 		console.log("✅ SUPER_ADMIN role assigned");
-
-// 		return res.json({ message: "Platform seeded successfully" });
-// 	} catch (error: any) {
-// 		res.status(500).json({ error: error.message });
-// 	}
-// });
+// Uncomment to run
+// main()
+//   .catch((e) => {
+//     console.error("Seed failed:", e);
+//     process.exit(1);
+//   })
+//   .finally(async () => {
+//     await prisma.$disconnect();
+//   });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

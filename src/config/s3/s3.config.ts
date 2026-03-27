@@ -47,3 +47,22 @@ export const uploadToS3 = (
         }
     });
 };
+
+export const deleteFromS3 = (fileUrl: string): Promise<void> => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const url = new URL(fileUrl);
+            const key = url.pathname.slice(1);
+
+            const command = new DeleteObjectCommand({
+                Bucket: process.env.S3_BUCKET_NAME!,
+                Key: key,
+            });
+
+            await s3().send(command);
+            resolve();
+        } catch (error) {
+            reject(error);
+        }
+    });
+};

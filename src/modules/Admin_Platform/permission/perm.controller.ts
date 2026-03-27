@@ -41,16 +41,17 @@ import { prisma } from "../../../config/db/prisma";
  */
 export const createPermission = async (req: Request, res: Response) => {
     try {
-        const { name, module, action } = req.body;
-        if (!name || !module || !action) {
+        const { name, scope ,module, action } = req.body;
+        if (!name || !module || !action || !scope) {
             return res.status(400).json({
                 status: false,
-                message: "Name, module, and action are required"
+                message: "Name, scope, module, and action are required"
             });
         }
         const permissions = await prisma.permission.create({
             data: {
-                name,
+                name: name.toUpperCase(),
+                scope: scope.toUpperCase(),
                 module: module.toUpperCase(),
                 action: action.toUpperCase()
             }
@@ -89,9 +90,9 @@ export const getPermissions = async (req: Request, res: Response) => {
         let scopeFilter = {};
 
         if(user.roleType === "SYSTEM"){
-            scopeFilter = { type: "SYSTEM" };
+            scopeFilter = { scope: "SYSTEM" };
         }else if(user.roleType === "TENANT"){
-            scopeFilter = { type: "TENANT" };
+            scopeFilter = { scope: "TENANT" };
         }else{
             return res.status(403).json({
                 status: false,
@@ -166,15 +167,16 @@ export const getPermissions = async (req: Request, res: Response) => {
 export const updatePermission = async (req: Request, res: Response) => {
     try {
         const { permId } = (req as any).params;
-        const { name, module, action } = req.body;
-        if (!name && !module && !action) {
+        const { name, scope, module, action } = req.body;
+        if (!name && !scope && !module && !action) {
             return res.status(400).json({
                 status: false,
-                message: "At least one of Name, module, or action is required"
+                message: "At least one of Name, scope, module, or action is required"
             });
         }
         const updateData: any = {};
-        if (name) updateData.name = name;
+        if (name) updateData.name = name.toUpperCase();
+        if (scope) updateData.scope = scope.toUpperCase();
         if (module) updateData.module = module.toUpperCase();
         if (action) updateData.action = action.toUpperCase();
 

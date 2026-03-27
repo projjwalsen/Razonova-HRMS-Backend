@@ -56,14 +56,16 @@ model Role {
 
 model Permission {
   id        String   @id @default(uuid())
-
-  name      String   @unique
+  name      String   
+  scope     RoleType @default(SYSTEM)   // e.g., SYSTEM | TENANT
   module    String?   // e.g., EMPLOYEE_MANAGEMENT
   action    String?   // e.g., CREATE, READ, UPDATE, DELETE
   
   createdAt DateTime @default(now())
 
   roles     RolePermission[]
+
+  @@unique([scope, module, action]) // Ensure unique permissions based on scope, module, and action
 }
 
 model RolePermission {
@@ -88,14 +90,20 @@ model User {
 
   departmentId String?
   department   Department? @relation("DepartmentUsers", fields: [departmentId], references: [id])
-  managedDepartment Department[] @relation("DepartmentManager")
 
   designationId String?
   designation   Designation? @relation(fields: [designationId], references: [id])
 
+  managerId    String?
+  manager      User?    @relation("UserReportingManager", fields: [managerId], references: [id])
+  reportees      User[]   @relation("UserReportingManager")
+
   isActive  Boolean  @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  managedDepartment Department[] @relation("DepartmentLead")
   userRoles UserRole[]
 }
 
@@ -159,7 +167,7 @@ model Department {
   tenant   Tenant   @relation(fields: [tenantId], references: [id])
 
   managerId String?
-  manager    User?    @relation("DepartmentManager", fields: [managerId], references: [id])
+  manager    User?    @relation("DepartmentLead", fields: [managerId], references: [id])
   
   users      User[]   @relation("DepartmentUsers")
   designations Designation[]
