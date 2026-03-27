@@ -9,7 +9,7 @@
     "start": "tsx -r tsconfig-paths/register src/server.ts"
   },
   "keywords": [],
-  "author": "Soumalya Chakraborty",
+  "author": "Soumalya-Chakraborty",
   "license": "ISC",
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
