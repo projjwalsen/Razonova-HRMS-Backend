@@ -86,27 +86,104 @@ export const login = async (req: Request, res: Response) => {
  *   post:
  *     tags:
  *       - auth
- *     summary: Signup Company Admin
+ *     summary: Signup Company Admin and create organization
+ *     description: Register a new company and create the company admin user. Sets up default roles, departments, and assigns free plan.
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - name
+ *               - email
+ *               - password
+ *               - confirmPassword
+ *               - companyName
  *             properties:
  *               name:
  *                 type: string
+ *                 description: Admin user's full name
  *               email:
  *                 type: string
+ *                 format: email
+ *                 description: Admin user's email address
  *               password:
  *                 type: string
+ *                 format: password
+ *                 minLength: 6
+ *                 description: Admin user's password
+ *               confirmPassword:
+ *                 type: string
+ *                 format: password
+ *                 description: Password confirmation (must match password)
  *               phone:
  *                 type: string
+ *                 description: Admin user's phone number (optional)
+ *               companyName:
+ *                 type: string
+ *                 description: Company/Organization name
  *     responses:
  *       201:
- *         description: User created successfully
+ *         description: Company and admin user registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     tenant:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         name:
+ *                           type: string
+ *                         status:
+ *                           type: string
+ *                           enum: [PENDING, ACTIVE, INACTIVE]
+ *                         isSystem:
+ *                           type: boolean
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         name:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *                         phone:
+ *                           type: string
+ *                         tenantId:
+ *                           type: string
+ *                     token:
+ *                       type: string
+ *                       description: JWT token (valid for 7 hours)
  *       400:
- *         description: Failed to create user
+ *         description: Bad request - validation failed or user already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                   enum: 
+ *                     - Company name is required
+ *                     - Passwords do not match
+ *                     - User with this email already exists
+ *                     - User with this phone number already exists
+ *       500:
+ *         description: Internal server error
  */
 export const signup = async (req: Request, res: Response) => {
     try {

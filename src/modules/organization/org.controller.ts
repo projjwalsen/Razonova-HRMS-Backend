@@ -3,6 +3,7 @@ import { prisma } from "../../config/db/prisma";
 import { deleteFromS3, uploadToS3 } from "../../config/s3/s3.config";
 import { DepartmentPolicy } from "../../core/policies/departmnt.policy";
 
+/* ***************** Organization Controllers ***************** */
 /**
  * @swagger
  * /org/info:
@@ -118,7 +119,7 @@ export const createOrganizationInfo = async (req: Request, res: Response) => {
 
 /**
  * @swagger
- * /org/info/{id}:
+ * /org/info:
  *   get:
  *     tags:
  *       - organization
@@ -140,15 +141,16 @@ export const createOrganizationInfo = async (req: Request, res: Response) => {
  */
 export const getOrganizationInfo = async (req: Request, res: Response) => {
     try {
-        const { id } = (req as any).params;
-        if (!id) {
+        const actor = (req as any).user; // Assuming auth middleware sets req.user
+        const tenantId = actor.tenantId;
+        if (!tenantId) {
             return res.status(400).json({
                 status: false,
-                message: "Organization ID is required"
+                message: "Tenant ID is required"
             });
         }
-        const organization = await prisma.organization.findUnique({
-            where: { id },
+        const organization = await prisma.organization.findFirst({
+            where: { tenantId },
             include: {
                 tenant: true
             }
@@ -318,6 +320,8 @@ export const updateOrganizationInfo = async (req: Request, res: Response) => {
     }
 }
 
+/***************** Organization Settings Controllers *****************/
+
 /**
  * @swagger
  * /org/settings:
@@ -450,6 +454,8 @@ export const getOrganizationSettings = async (req: Request, res: Response) => {
     }
 }
 
+/******************* Department Controllers *****************/
+
 /**
  * @swagger
  * /org/department/create:
@@ -552,6 +558,185 @@ export const getAllDepartments = async (req: Request, res: Response) => {
     }
 }
 
+/************* Assign Department Lead *************/
+/**
+ * @swagger
+ * /org/department/update/{departmentId}:
+ *   patch:
+ *     tags:
+ *       - organization
+ *     summary: Assign department lead and/or update department name
+ *     description: Update a department by assigning a manager (lead) and/or changing the department name. Validates that the manager exists, is active, and belongs to the department.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: departmentId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: Department ID to update
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: New department name (optional, must be unique within tenant)
+ *                 example: "Engineering"
+ *               managerId:
+ *                 type: string
+ *                 nullable: true
+ *                 description: User ID to assign as department lead (optional, can be null to remove lead)
+ *                 example: "usr_123abc"
+ *     responses:
+ *       200:
+ *         description: Department updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Department lead assigned successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     tenantId:
+ *                       type: string
+ *                     managerId:
+ *                       type: string
+ *                     manager:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         name:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *       400:
+ *         description: Bad request (invalid parameters)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Department ID is required"
+ *       403:
+ *         description: Forbidden (authorization failed)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 code:
+ *                   type: string
+ *                   example: "DUPLICATE_DEPARTMENT"
+ *                 message:
+ *                   type: string
+ *                   example: "Department with this name already exists"
+ *       404:
+ *         description: Department not found
+ *       500:
+ *         description: Internal server error
+ */
+export const updateDepartment = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const { departmentId } = (req as any).params;
+        const { name, managerId } = req.body;
+
+        if(!departmentId){
+            return res.status(400).json({
+                status: false,
+                message: "Department ID is required"
+            });
+        }
+        if(name !== undefined && typeof name !== "string"){
+            return res.status(400).json({
+                status: false,
+                message: "Invalid designation name must be string"
+            });
+        }
+        if(managerId !== undefined && typeof managerId !== "string"){
+            return res.status(400).json({
+                status: false,
+                message: "Invalid managerId must be string"
+            });
+        }
+
+        const decision = await DepartmentPolicy.canUpdateDepartment(actor, departmentId, { name, managerId });
+        if(!decision.allowed){
+            return res.status(403).json({
+                status: false,
+                code: decision.code,
+                message: decision.message || "You do not have permission to assign department lead"
+            });
+        }
+
+        const updatedDepartment = await prisma.department.update({
+            where: { id: departmentId },
+            data: { 
+                ...(name !== undefined ? { name: name.trim() } : {}),
+                ...(managerId !== undefined ? { managerId } : {}),
+            },
+            select: {
+                id: true,
+                name: true,
+                tenantId: true,
+                managerId: true,
+                manager: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true
+                    }
+                }
+            }
+        });
+
+        if(!updatedDepartment){
+            return res.status(404).json({
+                status: false,
+                message: "Department not found"
+            });
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Department lead assigned successfully",
+            data: updatedDepartment
+        });
+
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to assign department lead",
+            error: (error as Error).message
+        });
+    }
+}
+
+/***************** Designation Controllers *****************/
 
 /**
  * @swagger
@@ -771,179 +956,3 @@ export const deleteDesignation = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * @swagger
- * /org/department/update/{departmentId}:
- *   patch:
- *     tags:
- *       - organization
- *     summary: Assign department lead and/or update department name
- *     description: Update a department by assigning a manager (lead) and/or changing the department name. Validates that the manager exists, is active, and belongs to the department.
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: departmentId
- *         schema:
- *           type: string
- *         required: true
- *         description: Department ID to update
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *                 description: New department name (optional, must be unique within tenant)
- *                 example: "Engineering"
- *               managerId:
- *                 type: string
- *                 nullable: true
- *                 description: User ID to assign as department lead (optional, can be null to remove lead)
- *                 example: "usr_123abc"
- *     responses:
- *       200:
- *         description: Department updated successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "Department lead assigned successfully"
- *                 data:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: string
- *                     name:
- *                       type: string
- *                     tenantId:
- *                       type: string
- *                     managerId:
- *                       type: string
- *                     manager:
- *                       type: object
- *                       properties:
- *                         id:
- *                           type: string
- *                         name:
- *                           type: string
- *                         email:
- *                           type: string
- *       400:
- *         description: Bad request (invalid parameters)
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "Department ID is required"
- *       403:
- *         description: Forbidden (authorization failed)
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: boolean
- *                   example: false
- *                 code:
- *                   type: string
- *                   example: "DUPLICATE_DEPARTMENT"
- *                 message:
- *                   type: string
- *                   example: "Department with this name already exists"
- *       404:
- *         description: Department not found
- *       500:
- *         description: Internal server error
- */
-export const updateDepartment = async (req: Request, res: Response) => {
-    try {
-        const actor = (req as any).user;
-        const { departmentId } = (req as any).params;
-        const { name, managerId } = req.body;
-
-        if(!departmentId){
-            return res.status(400).json({
-                status: false,
-                message: "Department ID is required"
-            });
-        }
-        if(name !== undefined && typeof name !== "string"){
-            return res.status(400).json({
-                status: false,
-                message: "Invalid designation name must be string"
-            });
-        }
-        if(managerId !== undefined && typeof managerId !== "string"){
-            return res.status(400).json({
-                status: false,
-                message: "Invalid managerId must be string"
-            });
-        }
-
-        const decision = await DepartmentPolicy.canUpdateDepartment(actor, departmentId, { name, managerId });
-        if(!decision.allowed){
-            return res.status(403).json({
-                status: false,
-                code: decision.code,
-                message: decision.message || "You do not have permission to assign department lead"
-            });
-        }
-
-        const updatedDepartment = await prisma.department.update({
-            where: { id: departmentId },
-            data: { 
-                ...(name !== undefined ? { name: name.trim() } : {}),
-                ...(managerId !== undefined ? { managerId } : {}),
-            },
-            select: {
-                id: true,
-                name: true,
-                tenantId: true,
-                managerId: true,
-                manager: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true
-                    }
-                }
-            }
-        });
-
-        if(!updatedDepartment){
-            return res.status(404).json({
-                status: false,
-                message: "Department not found"
-            });
-        }
-        return res.status(200).json({
-            status: true,
-            message: "Department lead assigned successfully",
-            data: updatedDepartment
-        });
-
-    } catch (error: any) {
-        return res.status(500).json({
-            status: false,
-            message: "Failed to assign department lead",
-            error: (error as Error).message
-        });
-    }
-}

@@ -16,5 +16,22 @@ router.get(
     userController.getUserDetails
 )
 
+/** Onboarding Routes */
+router.post(
+    '/onboarding/invite',
+    userController.createOnboardingInvite
+);
+
+/** Resend Onboarding Invite Route */
+router.post(
+    '/onboarding/invite/:inviteId/resend',
+    userController.resendOnboardingInvite
+);
+
+/** Get Pending Onboarding Invites Route */
+router.get(
+    '/onboarding/invites/pending',
+    userController.getPendingOnboardingInvites
+);
 
 export default router

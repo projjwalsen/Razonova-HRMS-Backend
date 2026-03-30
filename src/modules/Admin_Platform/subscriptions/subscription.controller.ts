@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../../../config/db/prisma";
-import { featureSchema } from "../../../core/utils/zod";
+import { featureSchema } from "../../utils/zod";
 
 /**
  * @swagger
