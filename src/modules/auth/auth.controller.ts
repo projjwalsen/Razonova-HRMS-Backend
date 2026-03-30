@@ -36,6 +36,7 @@ export const login = async (req: Request, res: Response) => {
         if (!user) {
             return res.status(401).json({ status: false, message: "Invalid email" });
         }
+        console.log(user);
         /* Check password */
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
@@ -243,26 +244,39 @@ export const signup = async (req: Request, res: Response) => {
             // 1. Create role
             const adminRole = await tx.role.create({
                 data: {
-                name: "COMPANY_ADMIN",
-                type: "TENANT",
-                tenantId: result.tenant.id,
+                    name: "COMPANY_ADMIN",
+                    type: "TENANT",
+                    tenantId: result.tenant.id,
                 },
             });
+
+            // --- Assign all permissions to COMPANY_ADMIN ---
+            const allPermissions = await tx.permission.findMany();
+            if (allPermissions.length > 0) {
+                await tx.rolePermission.createMany({
+                    data: allPermissions.map((perm) => ({
+                        roleId: adminRole.id,
+                        permissionId: perm.id,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+            // --- End permission sync ---
 
             // 2. Create department
             const hrDepartment = await tx.department.create({
                 data: {
-                name: "HR",
-                tenantId: result.tenant.id,
+                    name: "HR",
+                    tenantId: result.tenant.id,
                 },
             });
 
             // 3. Create designation
             const hrDesignation = await tx.designation.create({
                 data: {
-                name: "HR Manager",
-                tenantId: result.tenant.id,
-                departmentId: hrDepartment.id,
+                    name: "HR Manager",
+                    tenantId: result.tenant.id,
+                    departmentId: hrDepartment.id,
                 },
             });
 
@@ -270,27 +284,27 @@ export const signup = async (req: Request, res: Response) => {
             await tx.user.update({
                 where: { id: result.user.id },
                 data: {
-                departmentId: hrDepartment.id,
-                designationId: hrDesignation.id,
+                    departmentId: hrDepartment.id,
+                    designationId: hrDesignation.id,
                 },
             });
 
             // 5. Assign role
             await tx.userRole.create({
                 data: {
-                userId: result.user.id,
-                roleId: adminRole.id,
+                    userId: result.user.id,
+                    roleId: adminRole.id,
                 },
             });
 
 
             if (freePlan) {
                 await tx.tenantSubscription.create({
-                data: {
-                    tenantId: result.tenant.id,
-                    planId: freePlan.id,
-                    startDate: new Date(),
-                },
+                    data: {
+                        tenantId: result.tenant.id,
+                        planId: freePlan.id,
+                        startDate: new Date(),
+                    },
                 });
             }
         });

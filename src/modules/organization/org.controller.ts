@@ -6,7 +6,7 @@ import { DepartmentPolicy } from "../../core/policies/departmnt.policy";
 /* ***************** Organization Controllers ***************** */
 /**
  * @swagger
- * /org/info:
+ * /org/info-create:
  *   post:
  *     tags:
  *       - organization
@@ -324,7 +324,7 @@ export const updateOrganizationInfo = async (req: Request, res: Response) => {
 
 /**
  * @swagger
- * /org/settings:
+ * /org/settings-create:
  *   post:
  *     tags:
  *       - organization
@@ -430,7 +430,8 @@ export const createOrganizationSettings = async (req: Request, res: Response) =>
  */
 export const getOrganizationSettings = async (req: Request, res: Response) => {
     try {
-        const { tenantId } = (req as any).params;
+        const actor = (req as any).user; // Assuming auth middleware sets req.user
+        const tenantId = actor.tenantId;
         if (!tenantId) {
             return res.status(400).json({
                 status: false,
@@ -454,6 +455,116 @@ export const getOrganizationSettings = async (req: Request, res: Response) => {
     }
 }
 
+
+/**
+ * @swagger
+ * /org/settings/update:
+ *   post:
+ *     tags:
+ *       - organization
+ *     summary: Update organization settings
+ *     description: Update multiple key-value settings for the current tenant (authenticated user).
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               settings:
+ *                 type: array
+ *                 description: Array of settings to update
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     key:
+ *                       type: string
+ *                       description: Setting key (e.g., timezone, currency)
+ *                     value:
+ *                       description: Setting value (string, number, or JSON)
+ *                       oneOf:
+ *                         - type: string
+ *                         - type: number
+ *                         - type: object
+ *             example:
+ *               settings:
+ *                 - key: "timezone"
+ *                   value: "Asia/Dhaka"
+ *                 - key: "currency"
+ *                   value: "BDT"
+ *     responses:
+ *       200:
+ *         description: Settings saved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       400:
+ *         description: Bad request (missing or invalid settings)
+ *       500:
+ *         description: Failed to save settings
+ */
+export const upsertOrganizationSettings = async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const { settings } = req.body;
+
+    if (!tenantId || !Array.isArray(settings) || settings.length === 0) {
+      return res.status(400).json({
+        status: false,
+        message: "settings array is required"
+      });
+    }
+
+    for (const s of settings) {
+      if (!s.key || s.value === undefined) {
+        return res.status(400).json({
+          status: false,
+          message: "Each setting must have a key and value"
+        });
+      }
+    }
+
+    const results = await prisma.$transaction(
+      settings.map((s: { key: string; value: any }) =>
+        prisma.setting.upsert({
+          where: {
+            tenantId_key: { tenantId, key: s.key }
+          },
+          update: { value: s.value },
+          create: {
+            tenantId,
+            key: s.key,
+            value: s.value
+          }
+        })
+      )
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Settings saved successfully",
+      data: results
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to save settings",
+      error: error.message
+    });
+  }
+};
 /******************* Department Controllers *****************/
 
 /**
@@ -561,7 +672,7 @@ export const getAllDepartments = async (req: Request, res: Response) => {
 /************* Assign Department Lead *************/
 /**
  * @swagger
- * /org/department/update/{departmentId}:
+ * /org/department/update/{deptId}:
  *   patch:
  *     tags:
  *       - organization
@@ -571,7 +682,7 @@ export const getAllDepartments = async (req: Request, res: Response) => {
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
- *         name: departmentId
+ *         name: deptId
  *         schema:
  *           type: string
  *         required: true
@@ -663,10 +774,10 @@ export const getAllDepartments = async (req: Request, res: Response) => {
 export const updateDepartment = async (req: Request, res: Response) => {
     try {
         const actor = (req as any).user;
-        const { departmentId } = (req as any).params;
+        const { deptId } = (req as any).params;
         const { name, managerId } = req.body;
 
-        if(!departmentId){
+        if(!deptId){
             return res.status(400).json({
                 status: false,
                 message: "Department ID is required"
@@ -685,7 +796,7 @@ export const updateDepartment = async (req: Request, res: Response) => {
             });
         }
 
-        const decision = await DepartmentPolicy.canUpdateDepartment(actor, departmentId, { name, managerId });
+        const decision = await DepartmentPolicy.canUpdateDepartment(actor, deptId, { name, managerId });
         if(!decision.allowed){
             return res.status(403).json({
                 status: false,
@@ -695,7 +806,7 @@ export const updateDepartment = async (req: Request, res: Response) => {
         }
 
         const updatedDepartment = await prisma.department.update({
-            where: { id: departmentId },
+            where: { id: deptId },
             data: { 
                 ...(name !== undefined ? { name: name.trim() } : {}),
                 ...(managerId !== undefined ? { managerId } : {}),
@@ -736,11 +847,9 @@ export const updateDepartment = async (req: Request, res: Response) => {
     }
 }
 
-/***************** Designation Controllers *****************/
-
 /**
  * @swagger
- * /org/department/delete/{id}:
+ * /org/department/delete/{deptId}:
  *   delete:
  *     tags:
  *       - organization
@@ -748,7 +857,7 @@ export const updateDepartment = async (req: Request, res: Response) => {
  *     description: Delete a department for a tenant.
  *     parameters:
  *       - in: path
- *         name: id
+ *         name: deptId
  *         schema:
  *           type: string
  *         required: true
@@ -762,16 +871,16 @@ export const updateDepartment = async (req: Request, res: Response) => {
 export const deleteDepartment = async (req: Request, res: Response) => {
     try {
         const tenantId = (req as any).user.tenantId;
-        const { id } = (req as any).params;
+        const { deptId } = (req as any).params;
 
-        if(!id){
+        if(!deptId){
             return res.status(400).json({
                 status: false,
                 message: "Department ID is required"
             });
         }
         await prisma.department.delete({
-            where: { id }
+            where: { id: deptId }
         });
         res.status(200).json({
             status: true,
@@ -785,6 +894,8 @@ export const deleteDepartment = async (req: Request, res: Response) => {
         });
     }
 }
+
+/***************** Designation Controllers *****************/
 
 /**
  * @swagger
@@ -873,7 +984,7 @@ export const getDesignations = async (req: Request, res: Response) => {
 
 /**
  * @swagger
- * /org/designation/update/{id}:
+ * /org/designation/update/{desigId}:
  *   patch:
  *     tags:
  *       - designation
@@ -881,7 +992,7 @@ export const getDesignations = async (req: Request, res: Response) => {
  *     description: Update the name or department of a designation.
  *     parameters:
  *       - in: path
- *         name: id
+ *         name: desigId
  *         schema:
  *           type: string
  *         required: true
@@ -907,11 +1018,11 @@ export const getDesignations = async (req: Request, res: Response) => {
  */
 export const updateDesignation = async (req: Request, res: Response) => {
   try {
-    const { id } = (req as any).params;
+    const { desigId } = (req as any).params;
     const { name, departmentId } = req.body;
 
     const updated = await prisma.designation.update({
-      where: { id },
+      where: { id: desigId },
       data: { name, departmentId },
     });
 
@@ -923,7 +1034,7 @@ export const updateDesignation = async (req: Request, res: Response) => {
 
 /**
  * @swagger
- * /org/designation/delete/{id}:
+ * /org/designation/delete/{desigId}:
  *   delete:
  *     tags:
  *       - designation
@@ -944,10 +1055,10 @@ export const updateDesignation = async (req: Request, res: Response) => {
  */
 export const deleteDesignation = async (req: Request, res: Response) => {
   try {
-    const { id } = (req as any).params;
+    const { desigId } = (req as any).params;
 
     await prisma.designation.delete({
-      where: { id },
+      where: { id: desigId },
     });
 
     res.status(200).json({ status: true, message: "Designation deleted" });

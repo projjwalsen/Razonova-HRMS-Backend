@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createDepartment, createDesignation, createOrganizationInfo, createOrganizationSettings, deleteDepartment, deleteDesignation, getAllDepartments, getDesignations, getOrganizationInfo, getOrganizationSettings, updateDepartment, updateDesignation, updateOrganizationInfo } from "./org.controller";
+import { createDepartment, createDesignation, createOrganizationInfo, createOrganizationSettings, deleteDepartment, deleteDesignation, getAllDepartments, getDesignations, getOrganizationInfo, getOrganizationSettings, updateDepartment, updateDesignation, updateOrganizationInfo, upsertOrganizationSettings } from "./org.controller";
 import { auth, checkPermission } from "../../core/middleware/auth";
 import { createFileUpload } from "../../core/service/multer.service";
 import RoleRoute from "../access-control/role.routes"
@@ -31,7 +31,7 @@ router.get(
     getOrganizationInfo
 );
 router.patch(
-    "/info-update/:id",
+    "/info-update/:orgId",
     upload.single('image'),
     updateOrganizationInfo
 )
@@ -42,8 +42,13 @@ router.post(
     createOrganizationSettings
 );
 router.get(
-    '/settings/:tenantId', 
+    '/settings', 
     getOrganizationSettings
+);
+
+router.patch(
+    '/settings/update', 
+    upsertOrganizationSettings
 );
 
 
@@ -59,12 +64,12 @@ router.get(
     getAllDepartments
 );
 router.patch(
-    '/department/update/:id', 
+    '/department/update/:deptId', 
     checkPermission("DEPARTMENT:UPDATE"),
     updateDepartment
 );
 router.delete(
-    '/department/delete/:id', 
+    '/department/delete/:deptId', 
     deleteDepartment
 );
 
@@ -80,12 +85,12 @@ router.get(
     getDesignations
 );
 router.patch(
-    '/designation/update/:id', 
+    '/designation/update/:desigId', 
     checkPermission("DESIGNATION:UPDATE"),
     updateDesignation
 );
 router.delete(
-    '/designation/delete/:id', 
+    '/designation/delete/:desigId', 
     deleteDesignation
 );
 
