@@ -27,7 +27,7 @@ router.post(
     createOrganizationInfo
 );
 router.get(
-    "/info/:id", 
+    "/info", 
     getOrganizationInfo
 );
 router.patch(
