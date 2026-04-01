@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { prisma } from "../../config/db/prisma";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
+import { seedTenantRoles } from "../utils/seed.roles";
 
 /**
  * @swagger
@@ -36,7 +37,6 @@ export const login = async (req: Request, res: Response) => {
         if (!user) {
             return res.status(401).json({ status: false, message: "Invalid email" });
         }
-        console.log(user);
         /* Check password */
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {

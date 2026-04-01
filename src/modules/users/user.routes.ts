@@ -7,14 +7,26 @@ const router = Router();
 router.use(auth, checkTenantApproval);
 
 router.get(
-    '/users/select-options',
+    '/select-options',
     userController.getTenantUserForSelection
 );
 
 router.get(
-    '/details/:id',
+    '/details/:userId',
     userController.getUserDetails
 )
+
+router.patch(
+    '/update/:userId',
+    userController.updateUser
+)
+
+router.delete(
+    '/delete/:userId',
+    userController.deleteUser
+)
+
+
 
 /** Onboarding Routes */
 router.post(

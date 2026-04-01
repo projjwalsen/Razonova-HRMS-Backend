@@ -28,7 +28,18 @@ export const ONBOARDING_TEMPLATE = `<!DOCTYPE html>
   .info-value{flex:1;padding:11px 16px;font-size:13px;color:#0f172a;font-weight:500;}
 
   .cta-wrap{text-align:center;margin:28px 0 6px;}
-  .cta{display:inline-block;background:#0A1628;color:#ffffff;font-size:13px;font-weight:700;padding:13px 38px;border-radius:4px;text-decoration:none;letter-spacing:0.04em;}
+  .cta{
+    display:inline-block;
+    background:#1E3A8A;
+    color:#ffffff !important;
+    font-size:13px;
+    font-weight:700;
+    padding:14px 42px;
+    border-radius:6px;
+    text-decoration:none;
+    letter-spacing:0.05em;
+    box-shadow:0 4px 10px rgba(0,0,0,0.08);
+  }
   .cta-sub{text-align:center;font-size:11px;color:#94a3b8;margin-top:10px;}
   .cta-sub a{color:#2563EB;word-break:break-all;}
 
@@ -38,11 +49,10 @@ export const ONBOARDING_TEMPLATE = `<!DOCTYPE html>
   .sig-name{font-weight:700;color:#0f172a;font-size:14px;}
   .sig-title{color:#64748b;font-size:12px;}
 
-  .footer{background:#0A1628;padding:20px 32px;text-align:center;}
+  .footer{background:#EFF6FF;padding:20px 32px;text-align:center;border-top:1px solid #BFDBFE;}
   .footer p{font-size:11px;color:#475569;margin:3px 0;line-height:1.6;}
-  .footer a{color:#64748b;text-decoration:none;}
-  .footer-links{margin-bottom:8px;}
-  .footer-links a{margin:0 8px;font-size:11px;color:#64748b;}
+  .footer a{color:#2563EB;text-decoration:none;}
+  .footer-links a{margin:0 8px;font-size:11px;color:#2563EB;}
 </style>
 </head>
 <body>
@@ -74,7 +84,10 @@ export const ONBOARDING_TEMPLATE = `<!DOCTYPE html>
     <p>Please access your onboarding portal to complete your pre-joining formalities, submit required documents, and review your appointment letter at your earliest convenience.</p>
 
     <div class="cta-wrap">
-      <a href="{{portalUrl}}" class="cta">Access Onboarding Portal</a>
+      <a href="{{portalUrl}}" class="cta" 
+        style="background:#1E40AF;color:#ffffff;text-decoration:none;display:inline-block;">
+        Access Onboarding Portal
+      </a>
     </div>
     <p class="cta-sub">Or visit: <a href="{{portalUrl}}">{{portalUrl}}</a></p>
 
