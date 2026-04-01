@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../../config/db/prisma";
+import { seedTenantRoles } from "../utils/seed.roles";
 
 /**
  * @swagger
@@ -130,14 +131,20 @@ export const approveTenant = async (req: Request, res: Response) => {
   try {
     const { tenantId } = (req as any).params;
 
-    const tenant = await prisma.tenant.update({
-      where: { id: tenantId },
-      data: { status: "APPROVED" }
+    const result = await prisma.$transaction(async (tx) => {
+      const tenant = await tx.tenant.update({
+        where: { id: tenantId },
+        data: { status: "APPROVED" }
+      });
+
+      await seedTenantRoles(tx, tenantId);
+
+      return tenant;
     });
     res.status(200).json({
         status: true,
         message: "Tenant approved successfully.",
-        data: tenant
+        data: result
     });
 
   } catch (error: any) {

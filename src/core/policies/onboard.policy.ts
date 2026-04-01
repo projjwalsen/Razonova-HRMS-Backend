@@ -35,12 +35,6 @@ export class OnboardPolicy extends BasePolicy {
                 "Manager ID is required to send an invite"
             )
         }
-        if(!payload?.roleId){
-            return this.deny(
-                "ROLE_ID_MISSING",
-                "Role ID is required to send an invite"
-            )
-        }
         if(!payload?.employeeCode){
             return this.deny(
                 "EMPLOYEE_CODE_MISSING",

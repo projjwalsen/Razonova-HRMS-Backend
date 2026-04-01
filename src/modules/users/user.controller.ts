@@ -1,14 +1,16 @@
 import { Request, Response } from "express";
 import { prisma } from "../../config/db/prisma";
+import bcrypt from "bcrypt";
 import { OnboardPolicy } from "../../core/policies/onboard.policy";
 import crypto from "crypto";
 import { fillTemplate } from "../utils/util";
 import { ONBOARDING_TEMPLATE } from "../utils/mail.template";
 import { sendMail } from "../../core/service/mail.service";
 
+/** Will return all the active users for the current tenant */
 /**
  * @swagger
- * /users/selection:
+ * /users/select-options:
  *   get:
  *     tags:
  *       - users
@@ -122,7 +124,7 @@ export const getTenantUserForSelection = async (req: Request, res: Response) => 
 
 /**
  * @swagger
- * /users/{userId}:
+ * /users/details/{userId}:
  *   get:
  *     tags:
  *       - users
@@ -257,6 +259,239 @@ export const getUserDetails = async (req: Request, res: Response) => {
     }
 }
 
+
+/**
+ * @swagger
+ * /users/update/{userId}:
+ *   put:
+ *     tags:
+ *       - users
+ *     summary: Update user details
+ *     description: Update the details and employee profile of a user by userId.
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the user to update
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               phone: { type: string }
+ *               departmentId: { type: string }
+ *               designationId: { type: string }
+ *               managerId: { type: string }
+ *               isActive: { type: boolean }
+ *               employeeCode: { type: string }
+ *               joiningDate: { type: string, format: date }
+ *               preferredSalary: { type: number }
+ *               dateOfBirth: { type: string, format: date }
+ *               addressLine1: { type: string }
+ *               addressLine2: { type: string }
+ *               city: { type: string }
+ *               state: { type: string }
+ *               country: { type: string }
+ *               pinCode: { type: string }
+ *     responses:
+ *       200:
+ *         description: Employee updated successfully
+ *       403:
+ *         description: Forbidden - cannot update employee from another tenant
+ *       404:
+ *         description: Employee not found
+ *       500:
+ *         description: Failed to update user
+ */
+export const updateUser = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const { userId } = (req as any).params;
+        const {
+            name,
+            phone,
+            departmentId,
+            designationId,
+            managerId,
+            isActive,
+            employeeCode,
+            joiningDate,
+            preferredSalary,
+            dateOfBirth,
+            addressLine1,
+            addressLine2,
+            city,
+            state,
+            country,
+            pinCode
+        } = req.body;
+
+        const targetUser = await prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                employeeProfile: true
+            }
+        });
+
+        if (!targetUser) {
+        return res.status(404).json({
+            status: false,
+            message: "Employee not found"
+        });
+        }
+
+        if (targetUser.tenantId !== actor.tenantId) {
+        return res.status(403).json({
+            status: false,
+            message: "You cannot update employee from another tenant"
+        });
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+        const updatedUser = await tx.user.update({
+            where: { id: userId },
+            data: {
+            name: name ?? undefined,
+            phone: phone ?? undefined,
+            departmentId: departmentId ?? undefined,
+            designationId: designationId ?? undefined,
+            managerId: managerId ?? undefined,
+            isActive: typeof isActive === "boolean" ? isActive : undefined
+            }
+        });
+
+        const updatedProfile = await tx.employeeProfile.upsert({
+            where: { userId },
+            update: {
+            employeeCode: employeeCode ?? undefined,
+            joiningDate: joiningDate ? new Date(joiningDate) : undefined,
+            salary: preferredSalary !== undefined ? Number(preferredSalary) : undefined,
+            dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+            addressLine1: addressLine1 ?? undefined,
+            addressLine2: addressLine2 ?? undefined,
+            city: city ?? undefined,
+            state: state ?? undefined,
+            country: country ?? undefined,
+            pinCode: pinCode ?? undefined
+            },
+            create: {
+            userId,
+            employeeCode: employeeCode ?? null,
+            joiningDate: joiningDate ? new Date(joiningDate) : null,
+            salary: preferredSalary !== undefined ? Number(preferredSalary) : null,
+            dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+            addressLine1: addressLine1 ?? null,
+            addressLine2: addressLine2 ?? null,
+            city: city ?? null,
+            state: state ?? null,
+            country: country ?? null,
+            pinCode: pinCode ?? null
+            }
+        });
+
+        return { updatedUser, updatedProfile };
+        });
+
+        return res.status(200).json({
+        status: true,
+        message: "Employee updated successfully",
+        data: result
+    });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to update user",
+            error: error.message
+        });
+    }
+}
+
+/**
+ * @swagger
+ * /users/delete/{userId}:
+ *   delete:
+ *     tags:
+ *       - users
+ *     summary: Deactivate a user
+ *     description: Deactivate (soft delete) a user by userId.
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the user to deactivate
+ *     responses:
+ *       200:
+ *         description: Employee deactivated successfully
+ *       400:
+ *         description: Employee is already inactive
+ *       403:
+ *         description: Forbidden - cannot deactivate employee from another tenant
+ *       404:
+ *         description: Employee not found
+ *       500:
+ *         description: Failed to deactivate user
+ */
+export const deleteUser = async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const { userId } = (req as any).params;
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!targetUser) {
+      return res.status(404).json({
+        status: false,
+        message: "Employee not found"
+      });
+    }
+
+    if (targetUser.tenantId !== actor.tenantId) {
+      return res.status(403).json({
+        status: false,
+        message: "You cannot deactivate employee from another tenant"
+      });
+    }
+
+    if (!targetUser.isActive) {
+      return res.status(400).json({
+        status: false,
+        message: "Employee is already inactive"
+      });
+    }
+
+    const deactivated = await prisma.user.update({
+      where: { id: userId },
+      data: { isActive: false }
+    });
+    if(!deactivated){
+        return res.status(500).json({
+            status: false,
+            message: "Failed to deactivate user"
+        });
+    }
+    return res.status(200).json({
+      status: true,
+      message: "Employee deactivated successfully"
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to deactivate user",
+      error: error.message
+    });
+  }
+};
+
+
 /*********************** Employee Onboarding Controllers **************************************/
 
 /**
@@ -327,7 +562,6 @@ export const createOnboardingInvite = async (req: Request, res: Response) => {
             designationId,
             designationName,
             managerId,
-            roleId,
             employeeCode,
             joiningDate,
             proposedSalary
@@ -337,7 +571,6 @@ export const createOnboardingInvite = async (req: Request, res: Response) => {
             email,
             departmentId,
             managerId,
-            roleId,
             employeeCode
         });
         if (!policyDecision.allowed) {
@@ -393,10 +626,9 @@ export const createOnboardingInvite = async (req: Request, res: Response) => {
                 departmentId: departmentId || null,
                 designationId: finalDesignationId,
                 managerId: managerId || null,
-                roleId: roleId || null,
 
-                employeeCode: String(employeeCode).trim() || null,
-                joiningDate: joiningDate || null,
+                employeeCode: employeeCode ? String(employeeCode).trim() : null,
+                joiningDate: joiningDate ? new Date(joiningDate) : null,
                 proposedSalary: proposedSalary !== undefined && proposedSalary !== null
                 ? Number(proposedSalary)
                 : null
@@ -524,7 +756,8 @@ export const resendOnboardingInvite = async (req: Request, res: Response) => {
             where: { id: inviteId },
             data: {
                 token: newToken,
-                expiresAt: newExpiresAt
+                expiresAt: newExpiresAt,
+                submittedAt: new Date()
             },
             select: {
                 id: true,
@@ -684,6 +917,290 @@ export const getPendingOnboardingInvites = async (req: Request, res: Response) =
         return res.status(500).json({
             status: false,
             message: "Failed to retrieve pending onboarding invites",
+            error: error.message
+        });
+    }
+}
+
+/**
+ * @swagger
+ * /invites/verify:
+ *   get:
+ *     tags:
+ *       - Onboarding
+ *     summary: Verify onboarding invite token
+ *     description: Public endpoint to verify whether an onboarding invite token is valid and not expired.
+ *     parameters:
+ *       - in: query
+ *         name: token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Onboarding invite token
+ *     responses:
+ *       200:
+ *         description: Invite token is valid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Onboarding invite token is valid
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     firstName:
+ *                       type: string
+ *                       nullable: true
+ *                     lastName:
+ *                       type: string
+ *                       nullable: true
+ *                     employeeCode:
+ *                       type: string
+ *                       nullable: true
+ *                     joiningDate:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *       400:
+ *         description: Token is required
+ *       404:
+ *         description: Invalid or expired onboarding invite token
+ *       500:
+ *         description: Internal server error
+ */
+export const verifyOnboardingInvite = async (req: Request, res: Response) => {
+    try {
+        const { token } = req.query;
+        if(!token || typeof token !== "string"){
+            return res.status(400).json({
+                status: false,
+                message: "Token is required"
+            });
+        }
+
+        const invite = await prisma.onboardingInvite.findFirst({
+            where: {
+                token,
+                status: "PENDING",
+                expiresAt: {
+                    gt: new Date()
+                }
+            },
+            select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                employeeCode: true,
+                joiningDate: true,
+                department:{ select: { id: true, name: true } },
+                designation:{ select: { id: true, name: true } },
+                manager:{ select: { id: true, name: true, email: true } },
+                tenant: { select: { id: true, name: true } }
+            }
+        });
+        if(!invite){
+            return res.status(404).json({
+                status: false,
+                message: "Invalid or expired onboarding invite token"
+            });
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Onboarding invite token is valid",
+            data: invite
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to verify onboarding invite",
+            error: error.message
+        });
+    }
+}
+
+/**
+ * @swagger
+ * /invites/accept:
+ *   post:
+ *     tags:
+ *       - Onboarding
+ *     summary: Accept onboarding invite
+ *     description: Public endpoint for an invited employee to set password and activate account.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - password
+ *               - confirmPassword
+ *             properties:
+ *               token:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *                 format: password
+ *               confirmPassword:
+ *                 type: string
+ *                 format: password
+ *     responses:
+ *       200:
+ *         description: Onboarding invite accepted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Onboarding invite accepted successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *       400:
+ *         description: Validation failed or user already exists
+ *       404:
+ *         description: Invalid or expired onboarding invite token
+ *       500:
+ *         description: Internal server error
+ */
+export const acceptOnboardingInvite = async (req: Request, res: Response) => {
+    try {
+        const {
+            token,
+            password,
+            confirmPassword
+        } = req.body;
+        if(!token || typeof token !== "string"){
+            return res.status(400).json({
+                status: false,
+                message: "Token is required"
+            });
+        }
+
+        if(!password || !confirmPassword){
+            return res.status(400).json({
+                status: false,
+                message: "Password and confirmPassword are required"
+            });
+        }
+        if(password !== confirmPassword){
+            return res.status(400).json({
+                status: false,
+                message: "Password and confirmPassword do not match"
+            });
+        }
+        const invite = await prisma.onboardingInvite.findFirst({
+            where: {
+                token,
+                status: "PENDING",
+                expiresAt: {
+                    gt: new Date()
+                }
+            }
+        });
+        if(!invite){
+            return res.status(404).json({
+                status: false,
+                message: "Invalid or expired onboarding invite token"
+            });
+        }
+
+        const existingUser = await prisma.user.findUnique({
+            where: { email: invite.email }
+        });
+        if(existingUser){
+            return res.status(400).json({
+                status: false,
+                message: "A user with this email already exists"
+            });
+        }
+        // hash the password
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const employeeRole = await prisma.role.findFirst({
+            where: {
+                tenantId: invite.tenantId,
+                name: "EMPLOYEE"
+            }
+        });
+
+        const result = await prisma.$transaction(async (tx) => {
+            const newUser = await tx.user.create({
+                data: {
+                    tenantId: invite.tenantId,
+                    email: invite.email,
+                    phone: invite.phone,
+                    password: hashedPassword,
+                    name: [invite.firstName, invite.lastName].filter(Boolean).join(' '),
+                    departmentId: invite.departmentId,
+                    designationId: invite.designationId,
+                    managerId: invite.managerId,
+                    isActive: true,
+                }
+            });
+
+            if(!invite.roleId){
+                // Setting EMPLOYEE role
+                await tx.userRole.create({
+                    data: {
+                        userId: newUser.id,
+                        roleId: (employeeRole as { id: string }).id
+                    }
+                })
+            }
+            await tx.employeeProfile.create({
+                data: {
+                    userId: newUser.id,
+                    employeeCode: invite.employeeCode,
+                    joiningDate: invite.joiningDate || null,
+                    salary: invite.proposedSalary ?? null
+                }
+            })
+            await tx.onboardingInvite.update({
+                where: { id: invite.id },
+                data: { 
+                    status: "ACCEPTED",
+                    completedAt: new Date()
+                }
+            })
+            return newUser;
+        });
+
+        return res.status(200).json({
+            status: true,
+            message: "Onboarding invite accepted successfully",
+            data: {
+                id: result.id,
+                email: result.email,
+                name: result.name
+            }
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to accept onboarding invite",
             error: error.message
         });
     }
