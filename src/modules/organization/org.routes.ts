@@ -6,6 +6,7 @@ import RoleRoute from "../access-control/role.routes"
 import UserRoute from "../users/user.routes";
 import ReportingRoute from "../reporting/reporting.routes";
 import AttendRoute from "../attendence/attend.routes";
+import LeaveRoute from "../leave/leave.routes";
 
 const router = Router();
 
@@ -13,6 +14,7 @@ router.use("/role", RoleRoute);
 router.use("/reporting", ReportingRoute);
 router.use("/users", UserRoute);
 router.use("/attendance", AttendRoute);
+router.use("/leave", LeaveRoute);
 
 
 const upload = createFileUpload({

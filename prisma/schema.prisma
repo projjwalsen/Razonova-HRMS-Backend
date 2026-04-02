@@ -37,6 +37,8 @@ model Tenant { // COMPANY
   onboardingInvites OnboardingInvite[]
   attendanceConfigs AttendanceConfig[]
   attendances Attendance[]
+  leaveTypes LeaveType[]
+  leaveRequests LeaveRequest[]
 }
 
 enum RoleType {
@@ -113,6 +115,10 @@ model User {
 
   userRoles UserRole[]
   attendances Attendance[]
+  leaveRequests LeaveRequest[]
+  leaveRequestAsReporting LeaveRequest[] @relation("LeaveRequestReportingManager")
+  leaveRequestAsAdmin LeaveRequest[] @relation("LeaveRequestCompanyAdmin")
+  leaveApprovalIsGiven LeaveApproval[]
 }
 
 model UserRole {
@@ -349,4 +355,110 @@ model Attendance {
   @@unique([userId, date])
   @@index([userId, date])
   @@index([tenantId, date])
+}
+
+enum LeaveTypeCode {
+  CASUAL
+  SICK
+  MATERNITY
+  PATERNITY
+  EARNED
+  UNPAID
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  PARTIALLY_APPROVED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum LeaveApprovalAction {
+  PENDING
+  APPROVE
+  REJECT
+}
+
+model LeaveType {
+  id        String   @id @default(uuid())
+
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  name      String   // e.g., CASUAL, SICK, MATERNITY
+  typeCode  LeaveTypeCode?
+  maxLimits Int?     // e.g., max 12 casual leaves per year
+  attachmentRequired Boolean @default(false)
+  priorNoticeDays Int?  @default(0)
+  allowHalfDay Boolean @default(false)
+  sandwichLeaveAllowed Boolean @default(false) // if true, allows taking leave in between two working days
+  isActive  Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leaveRequests LeaveRequest[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+}
+
+model LeaveRequest {
+  id        String   @id @default(uuid())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  leaveTypeId String
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  startDate DateTime
+  endDate   DateTime
+  totalDays Float // can be fractional for half-day leaves 0.5
+
+  reason    String?
+  attachmentUrls String[]
+
+  reportingManagerId String?
+  reportingManager   User?    @relation("LeaveRequestReportingManager", fields: [reportingManagerId], references: [id])
+
+  companyAdminId String?
+  companyAdmin   User?    @relation("LeaveRequestCompanyAdmin", fields: [companyAdminId], references: [id])
+
+  status    LeaveRequestStatus @default(PENDING)
+
+  managerApprovedAt DateTime?
+  adminApprovedAt DateTime?
+  rejectedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  approvals LeaveApproval[]
+
+  @@index([tenantId, userId, status])
+  @@index([tenantId, startDate, endDate])
+}
+
+model LeaveApproval {
+  id        String   @id @default(uuid())
+
+  leaveRequestId String
+  leaveRequest   LeaveRequest @relation(fields: [leaveRequestId], references: [id])
+
+  approverId String
+  approver   User     @relation(fields: [approverId], references: [id])
+
+  status    LeaveApprovalAction @default(PENDING)
+  remarks   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([leaveRequestId, approverId]) // Ensure one approval action per approver per leave request
+  @@index([approverId, status])
 }

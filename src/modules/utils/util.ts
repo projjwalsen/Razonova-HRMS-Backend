@@ -44,3 +44,10 @@ export async function getTenantTimezone(tenantId: string) {
   const value = settings?.value as any;
   return value?.timezone || "UTC";
 }
+export function getDayDiffInclusiveTZ(start: Date, end: Date, timezone: string) {
+  const startDay = getStartOfDay(start, timezone);
+  const endDay = getEndOfDay(end, timezone);
+
+  const ms = endDay.getTime() - startDay.getTime();
+  return Math.floor(ms / (1000 * 60 * 60 * 24)) + 1;
+}

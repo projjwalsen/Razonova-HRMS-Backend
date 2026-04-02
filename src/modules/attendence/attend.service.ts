@@ -1,5 +1,5 @@
 import { prisma } from "../../config/db/prisma";
-import { diffInMinutes, getStartOfDay, getTenantTimezone, parseTimeToDate } from "../utils/util";
+import { diffInMinutes, getEndOfDay, getStartOfDay, getTenantTimezone, parseTimeToDate } from "../utils/util";
 
 export class AttendService {
     static async getTenantConfig(tenantId: string){
@@ -177,7 +177,7 @@ export class AttendService {
                 where.date.gte = getStartOfDay(new Date(params.startDate), timezone);
             }
             if(params.endDate) {
-                where.date.lte = getStartOfDay(new Date(params.endDate), timezone);
+                where.date.lte = getEndOfDay(new Date(params.endDate), timezone);
             }
         }
 
