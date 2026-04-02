@@ -1,13 +1,12 @@
 import { LeaveTypeCode } from "@prisma/client";
 import { prisma } from "../../config/db/prisma";
 import { getDayDiffInclusiveTZ, getEndOfDay, getStartOfDay, getTenantTimezone } from "../utils/util";
-import { success } from "zod";
 
 export class LeaveService {
     static async upsertLeaveType(tenantId: string, payload: {
         name: string;
         typeCode?: string | null;
-        maxLimit?: number | null;
+        maxLimits?: number | null;
         attachmentRequired?: boolean;
         priorNoticeDays?: number;
         allowHalfDay?: boolean;
@@ -22,21 +21,21 @@ export class LeaveService {
             },
             update: {
                 typeCode: payload.typeCode ? (payload.typeCode as LeaveTypeCode) : null,
-                maxLimit: payload.maxLimit,
+                maxLimits: payload.maxLimits,
                 attachmentRequired: payload.attachmentRequired,
                 priorNoticeDays: payload.priorNoticeDays,
                 allowHalfDay: payload.allowHalfDay,
-                sandwichLeaveEnabled: payload.sandwichLeaveAllowed
+                sandwichLeaveAllowed: payload.sandwichLeaveAllowed
             },
             create: {
                 tenantId,
                 name: payload.name,
                 typeCode: payload.typeCode ? (payload.typeCode as LeaveTypeCode) : null,
-                maxLimit: payload.maxLimit,
+                maxLimits: payload.maxLimits,
                 attachmentRequired: payload.attachmentRequired,
                 priorNoticeDays: payload.priorNoticeDays,
                 allowHalfDay: payload.allowHalfDay,
-                sandwichLeaveEnabled: payload.sandwichLeaveAllowed
+                sandwichLeaveAllowed: payload.sandwichLeaveAllowed
             }
         });
     }
@@ -133,7 +132,7 @@ export class LeaveService {
             companyAdminId = companyAdminUser?.userId || null;
         }
 
-        const reportingManagerId = user?.managerId || null;
+        const reportingManagerId = user?.managerId || user?.department?.managerId || null;
         const departmentHeadId = user?.department?.managerId || null;
 
         const approverIds = new Set<string>();
@@ -158,7 +157,6 @@ export class LeaveService {
                     reason: payload.reason,
                     attachmentUrls: payload.attachmentUrls ? payload.attachmentUrls : [],
                     reportingManagerId,
-                    departmentHeadId,
                     companyAdminId: companyAdminId,
                     status: approverIds.size === 0 ? "APPROVED" : "PENDING"
                 }
@@ -268,7 +266,7 @@ export class LeaveService {
                     where: { id: leaveRequestId },
                     data: {
                         status: "APPROVED",
-                        approvedAt: new Date()
+                        adminApprovedAt: new Date()
                     }
                 })
             }

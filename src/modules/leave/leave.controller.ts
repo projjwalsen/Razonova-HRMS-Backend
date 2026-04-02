@@ -20,7 +20,7 @@ import { uploadToS3 } from "../../config/s3/s3.config";
  *                 type: string
  *               typeCode:
  *                 type: string
- *               maxLimit:
+ *               maxLimits:
  *                 type: integer
  *               attachmentRequired:
  *                 type: boolean
@@ -58,7 +58,7 @@ export const upsertLeaveType = async (req: Request, res: Response) => {
         const {
             name,
             typeCode,
-            maxLimit,
+            maxLimits,
             attachmentRequired,
             priorNoticeDays,
             allowHalfDay,
@@ -68,7 +68,7 @@ export const upsertLeaveType = async (req: Request, res: Response) => {
         const result = await LeaveService.upsertLeaveType(actor.tenantId, {
             name: name.trim(),
             typeCode,
-            maxLimit: maxLimit !== undefined ? Number(maxLimit) : 0,
+            maxLimits: maxLimits !== undefined ? Number(maxLimits) : 0,
             attachmentRequired: attachmentRequired ?? false,
             priorNoticeDays: priorNoticeDays ?? 0,
             allowHalfDay: allowHalfDay ?? false,
