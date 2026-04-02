@@ -606,7 +606,26 @@ export const createOnboardingInvite = async (req: Request, res: Response) => {
                 finalDesignationId = newDesignation.id;
             }
         }
-        
+        let finalManagerId: string | null = null;
+
+        if (managerId) {
+            const managerUser = await prisma.user.findFirst({
+                where: {
+                    id: String(managerId),
+                    tenantId,
+                    isActive: true
+                }
+            });
+
+            if (!managerUser) {
+                return res.status(400).json({
+                    status: false,
+                    message: "Manager not found in this tenant"
+                });
+            }
+
+            finalManagerId = managerUser.id;
+        }
 
         const token = crypto.randomBytes(32).toString("hex");
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // Token valid for 7 days
@@ -625,7 +644,7 @@ export const createOnboardingInvite = async (req: Request, res: Response) => {
 
                 departmentId: departmentId || null,
                 designationId: finalDesignationId,
-                managerId: managerId || null,
+                managerId: finalManagerId,
 
                 employeeCode: employeeCode ? String(employeeCode).trim() : null,
                 joiningDate: joiningDate ? new Date(joiningDate) : null,
@@ -1157,7 +1176,7 @@ export const acceptOnboardingInvite = async (req: Request, res: Response) => {
                     name: [invite.firstName, invite.lastName].filter(Boolean).join(' '),
                     departmentId: invite.departmentId,
                     designationId: invite.designationId,
-                    managerId: invite.managerId,
+                    managerId: invite.managerId ?? null,
                     isActive: true,
                 }
             });
