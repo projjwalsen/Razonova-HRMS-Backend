@@ -78,7 +78,7 @@ export const ONBOARDING_TEMPLATE = `<!DOCTYPE html>
       <div class="info-row"><div class="info-label">Role</div><div class="info-value">{{role}}</div></div>
       <div class="info-row"><div class="info-label">Department</div><div class="info-value">{{department}}</div></div>
       <div class="info-row"><div class="info-label">Start Date</div><div class="info-value">{{startDate}}</div></div>
-      <div class="info-row"><div class="info-label">Reporting To</div><div class="info-value">{{manager}}</div></div>
+      {{managerRow}}
     </div>
 
     <p>Please access your onboarding portal to complete your pre-joining formalities, submit required documents, and review your appointment letter at your earliest convenience.</p>

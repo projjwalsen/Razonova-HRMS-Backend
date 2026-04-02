@@ -808,6 +808,12 @@ export const resendOnboardingInvite = async (req: Request, res: Response) => {
                 }
             }
         });
+        const managerRow = updatedInvite.manager
+        ? `<div class="info-row">
+            <div class="info-label">Reporting To</div>
+            <div class="info-value">${updatedInvite.manager.name}</div>
+            </div>`
+        : "";
 
         const htmlContent = await fillTemplate(ONBOARDING_TEMPLATE, {
             companyName: process.env.COMPANY_NAME || "Our Company",
@@ -816,7 +822,7 @@ export const resendOnboardingInvite = async (req: Request, res: Response) => {
             role:            updatedInvite.designation?.name || "",
             department:      updatedInvite.department?.name || "",
             startDate:       updatedInvite.joiningDate?.toISOString().split('T')[0] || "",
-            manager:         updatedInvite.manager?.name || "",
+            managerRow:      managerRow,
             senderName:      actor?.name || "",
             senderTitle:     actor?.designation?.name || "",
             portalUrl:       `${process.env.FRONTEND_URL}/accept?token=${newToken}` || "",
