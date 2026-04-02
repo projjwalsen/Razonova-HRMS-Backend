@@ -570,7 +570,7 @@ export const createOnboardingInvite = async (req: Request, res: Response) => {
         const policyDecision = await OnboardPolicy.canInvite(actor, {
             email,
             departmentId,
-            managerId,
+            managerId: managerId || null,
             employeeCode
         });
         if (!policyDecision.allowed) {
@@ -800,7 +800,7 @@ export const resendOnboardingInvite = async (req: Request, res: Response) => {
             manager:         updatedInvite.manager?.name || "",
             senderName:      actor?.name || "",
             senderTitle:     actor?.designation?.name || "",
-            portalUrl:       process.env.FRONTEND_URL || "",
+            portalUrl:       `${process.env.FRONTEND_URL}/accept?token=${newToken}` || "",
         });
 
         const sendEmailResult = await sendMail({
@@ -1006,7 +1006,8 @@ export const verifyOnboardingInvite = async (req: Request, res: Response) => {
                 department:{ select: { id: true, name: true } },
                 designation:{ select: { id: true, name: true } },
                 manager:{ select: { id: true, name: true, email: true } },
-                tenant: { select: { id: true, name: true } }
+                tenant: { select: { id: true, name: true } },
+                token: true
             }
         });
         if(!invite){
