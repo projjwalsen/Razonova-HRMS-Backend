@@ -51,3 +51,48 @@ export function getDayDiffInclusiveTZ(start: Date, end: Date, timezone: string) 
   const ms = endDay.getTime() - startDay.getTime();
   return Math.floor(ms / (1000 * 60 * 60 * 24)) + 1;
 }
+
+export const getPayrollMonthStart = (month: number, year: number, timezone: string) => {
+  // Create a date in UTC first
+  const utcDate = new Date(Date.UTC(year, month - 1, 1));
+
+  // Convert to tenant timezone
+  const zoned = toZonedTime(utcDate, timezone);
+
+  // Start of month in tenant timezone
+  const startZoned = new Date(
+    zoned.getFullYear(),
+    zoned.getMonth(),
+    1,
+    0, 0, 0, 0
+  );
+
+  // Convert back to UTC for DB query
+  return fromZonedTime(startZoned, timezone);
+};
+
+export const getPayrollMonthEnd = (month: number, year: number, timezone: string) => {
+  const utcDate = new Date(Date.UTC(year, month - 1, 1));
+  const zoned = toZonedTime(utcDate, timezone);
+
+  // Last day of month
+  const endZoned = new Date(
+    zoned.getFullYear(),
+    zoned.getMonth() + 1,
+    0,
+    23, 59, 59, 999
+  );
+
+  return fromZonedTime(endZoned, timezone);
+};
+
+export const getDaysInMonth = (month: number, year: number, timezone: string) => {
+  const utcDate = new Date(Date.UTC(year, month - 1, 1));
+  const zoned = toZonedTime(utcDate, timezone);
+
+  return new Date(
+    zoned.getFullYear(),
+    zoned.getMonth() + 1,
+    0
+  ).getDate();
+};

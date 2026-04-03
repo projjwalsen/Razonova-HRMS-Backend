@@ -39,6 +39,8 @@ model Tenant { // COMPANY
   attendances Attendance[]
   leaveTypes LeaveType[]
   leaveRequests LeaveRequest[]
+  payrolls Payroll[]
+  payStructures PayStructure[]
 }
 
 enum RoleType {
@@ -119,6 +121,8 @@ model User {
   leaveRequestAsReporting LeaveRequest[] @relation("LeaveRequestReportingManager")
   leaveRequestAsAdmin LeaveRequest[] @relation("LeaveRequestCompanyAdmin")
   leaveApprovalIsGiven LeaveApproval[]
+  payrolls Payroll[]
+  bankAccount EmployeeBankAccount?
 }
 
 model UserRole {
@@ -186,6 +190,7 @@ model Department {
   users      User[]   @relation("DepartmentUsers")
   designations Designation[]
   onboardingInvites OnboardingInvite[]
+  payStructures PayStructure[]
 
   @@unique([name, tenantId]) // Ensure department names are unique within a tenant
 }
@@ -202,6 +207,7 @@ model Designation {
 
   users        User[]      // users holding this designation
   onboardingInvites OnboardingInvite[]
+  payStructures PayStructure[]
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -461,4 +467,180 @@ model LeaveApproval {
 
   @@unique([leaveRequestId, approverId]) // Ensure one approval action per approver per leave request
   @@index([approverId, status])
+}
+
+enum PayrollStatus {
+  DRAFT
+  PROCESSED
+  DISBURSING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+enum PayrollItemType {
+  EARNING
+  ALLOWANCE
+  DEDUCTION
+  TAX
+  BONUS
+}
+
+enum PayStructureCompType {
+  BASIC
+  ALLOWANCE
+  DEDUCTION
+}
+
+enum PayStructureValueType {
+  PERCENTAGE
+  FLAT
+}
+
+enum DisbursementStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  REVERSED
+}
+
+model EmployeeBankAccount {
+  id                String   @id @default(uuid())
+
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id])
+
+
+  accountHolderName String
+  accountNumber     String
+  ifscCode          String
+  bankName          String?
+  branchName        String?
+  upiId             String?
+
+  isVerified        Boolean  @default(false)
+  isPrimary         Boolean  @default(true)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model PayStructure {
+  id                String   @id @default(uuid())
+
+  tenantId          String
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+
+  name              String
+  departmentId      String?
+  department        Department? @relation(fields: [departmentId], references: [id])
+
+  designationId     String?
+  designation       Designation? @relation(fields: [designationId], references: [id])
+  
+  isDefault         Boolean  @default(false) // if true, applies to all employees without specific structure
+  isActive          Boolean  @default(true)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  components        PayStructureComponent[]
+  payrolls          Payroll[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+}
+
+model PayStructureComponent {
+  id                String   @id @default(uuid())
+
+  payStructureId    String
+  payStructure      PayStructure @relation(fields: [payStructureId], references: [id])
+
+  label             String
+  type              PayStructureCompType
+  valueType         PayStructureValueType
+  value             Float // if percentage, value is % of basic, if flat, it's fixed amount
+  isTaxable         Boolean  @default(false)
+  attachmentRequired Boolean  @default(false)
+
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Payroll {
+  id                String   @id @default(uuid())
+
+  tenantId          String
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+
+  payStructureId    String
+  payStructure      PayStructure @relation(fields: [payStructureId], references: [id])
+
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+
+  month             Int // 1-12
+  year              Int
+
+  baseSalary        Float
+  grossSalary       Float
+  totalEarnings     Float @default(0)
+  totalDeductions   Float @default(0)
+  totalAllowances   Float @default(0)
+  totalBonus        Float @default(0)
+  totalTax          Float @default(0)
+  netSalary         Float
+
+  presentDays       Float @default(0)
+  absentDays        Float @default(0)
+  lateDays          Float @default(0)
+  halfDays          Float @default(0)
+  payableDays       Float @default(0)
+  paidLeaves        Float @default(0)
+  unpaidLeaves      Float @default(0)
+
+  status            PayrollStatus @default(DRAFT)
+  processedAt       DateTime?
+  paidAt            DateTime?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  items             PayrollItem[]
+  payslip           Payslip?
+
+  @@unique([tenantId, userId, month, year])
+  @@index([tenantId, userId, month, year])
+}
+
+model PayrollItem {
+  id                String   @id @default(uuid())
+
+  payrollId         String
+  payroll           Payroll   @relation(fields: [payrollId], references: [id])
+
+  label             String
+  type              PayrollItemType
+  amount            Float
+  description       String?
+  attachmentUrl     String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Payslip {
+  id                String   @id @default(uuid())
+
+  payrollId         String   @unique
+  payroll           Payroll   @relation(fields: [payrollId], references: [id])
+
+  fileUrl           String?    // URL to the generated payslip PDF
+  generatedAt       DateTime?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }

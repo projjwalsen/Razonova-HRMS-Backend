@@ -7,6 +7,7 @@ import UserRoute from "../users/user.routes";
 import ReportingRoute from "../reporting/reporting.routes";
 import AttendRoute from "../attendence/attend.routes";
 import LeaveRoute from "../leave/leave.routes";
+import PayrollRoute from "../payroll/payroll.routes"
 
 const router = Router();
 
@@ -15,6 +16,7 @@ router.use("/reporting", ReportingRoute);
 router.use("/users", UserRoute);
 router.use("/attendance", AttendRoute);
 router.use("/leave", LeaveRoute);
+router.use("/payroll", PayrollRoute);
 
 
 const upload = createFileUpload({
