@@ -1,7 +1,10 @@
 import { Router } from "express";
 import * as payrollController from "./payroll.controller";
+import { auth } from "../../core/middleware/auth";
 
 const router = Router();
+
+router.use(auth)
 
 /* -------------- DASHBOARD KPI's ---------------- */
 router.get(
