@@ -50,7 +50,7 @@ export class PayrollService {
         });
         if(!existing) {
             // Create new structure
-            const newStructure = await prisma.payStructure.create({
+            return prisma.payStructure.create({
                 data: {
                     tenantId,
                     name: payload.name,
