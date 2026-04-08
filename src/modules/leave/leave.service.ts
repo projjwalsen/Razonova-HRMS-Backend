@@ -1055,8 +1055,8 @@ export class LeaveService {
                         approver: {
                             select: { id: true, name: true, email: true }
                         },
-                        orderBy: { createdAt: "asc" }
-                    }
+                    },
+                    orderBy: { createdAt: "asc" }
                 }
             },
             orderBy: {
