@@ -2,12 +2,29 @@
 import { Request, Response } from "express";
 import { LeaveService } from "./leave.service";
 import { uploadToS3 } from "../../config/s3/s3.config";
+import { error } from "node:console";
 
+
+type AuthRequest = Request & {
+    user?: {
+        id: string;
+        tenantId: string;
+    }
+}
+
+function handleError(res: Response, error: any, fallback: string) {
+  return res.status(error.statusCode || 500).json({
+    status: false,
+    message: error.message || fallback
+  });
+}
+
+/** ----------- Upsert Leave Type ----------------------------------------- */
 /**
  * @swagger
  * /leave/type:
  *   post:
- *     summary: Upsert a leave type
+ *     summary: Create or update a leave type
  *     tags: [Leave]
  *     requestBody:
  *       required: true
@@ -15,75 +32,56 @@ import { uploadToS3 } from "../../config/s3/s3.config";
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - name
  *             properties:
  *               name:
  *                 type: string
+ *                 example: Casual Leave
  *               typeCode:
  *                 type: string
- *               maxLimits:
- *                 type: integer
- *               attachmentRequired:
+ *                 enum: [CASUAL, SICK, MATERNITY, PATERNITY, EARNED, UNPAID]
+ *               isActive:
  *                 type: boolean
- *               priorNoticeDays:
- *                 type: integer
- *               allowHalfDay:
- *                 type: boolean
- *               sandwichLeaveAllowed:
- *                 type: boolean
+ *                 example: true
  *     responses:
  *       200:
- *         description: Leave type upserted successfully
- *       404:
- *         description: Leave type not found for update
- *       500:
- *         description: Failed to create leave type
+ *         description: Leave type saved successfully
+ *
  *   get:
- *     summary: Get all leave types
+ *     summary: Get all active leave types
  *     tags: [Leave]
  *     responses:
  *       200:
  *         description: Leave types fetched successfully
- *       404:
- *         description: No leave types found
- *       500:
- *         description: Failed to fetch leave types
  */
-
-
-/** -- Upsert Leave Type -- */
-export const upsertLeaveType = async (req: Request, res: Response) => {
+export const upsertLeaveType = async (req: AuthRequest, res: Response) => {
     try {
         const actor = (req as any).user;
-
         const {
             name,
             typeCode,
-            maxLimits,
-            attachmentRequired,
-            priorNoticeDays,
-            allowHalfDay,
-            sandwichLeaveAllowed,
+            isActive
         } = req.body;
 
-        const result = await LeaveService.upsertLeaveType(actor.tenantId, {
-            name: name.trim(),
-            typeCode,
-            maxLimits: maxLimits !== undefined ? Number(maxLimits) : 0,
-            attachmentRequired: attachmentRequired ?? false,
-            priorNoticeDays: priorNoticeDays ?? 0,
-            allowHalfDay: allowHalfDay ?? false,
-            sandwichLeaveAllowed: sandwichLeaveAllowed ?? false,
-        })
-        if(!result) {
-            return res.status(404).json({
-                status: false,
-                message: "Leave type not found for update"
-            })
+        const data = await LeaveService.upsertLeaveType(
+            actor.tenantId,
+            {
+                name,
+                typeCode,
+                isActive
+            }
+        );
+        if(!data) {
+            return handleError(res,
+                error,
+                "Failed to create leave type"
+            )
         }
         return res.status(200).json({
             status: true,
-            message: "Leave type upserted successfully",
-            data: result
+            message: "Leave type saved successfully",
+            data
         })
     } catch (error: any) {
         return res.status(500).json({
@@ -94,22 +92,23 @@ export const upsertLeaveType = async (req: Request, res: Response) => {
     }
 }
 
-export const getLeaveTypes = async (req: Request, res: Response) => {
+// Get Leave Types --------- Admin and Managers
+
+export const getLeaveTypes = async (req: AuthRequest, res: Response) => {
     try {
         const actor = (req as any).user;
 
-        const result = await LeaveService.getLeaveTypes(actor.tenantId);
-
-        if(!result || result.length === 0) {
-            return res.status(404).json({
-                status: false,
-                message: "No leave types found"
-            })
+        const data = await LeaveService.getLeaveTypes(actor.tenantId);
+        if(!data) {
+            return handleError(res,
+                new Error("No leave types found"),
+                "Failed to fetch leave types"
+            )
         }
         return res.status(200).json({
             status: true,
             message: "Leave types fetched successfully",
-            data: result
+            data
         })
 
     } catch (error: any) {
@@ -120,6 +119,755 @@ export const getLeaveTypes = async (req: Request, res: Response) => {
         })
     }
 }
+
+
+/* -----------  Create / Update Leave Policy ---------------------------- */
+
+/**
+ * @swagger
+ * /leave/policy:
+ *   post:
+ *     summary: Create or update a leave policy
+ *     tags: [Leave]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - employmentType
+ *               - rules
+ *             properties:
+ *               id:
+ *                 type: string
+ *               name:
+ *                 type: string
+ *                 example: Full Time Leave Policy
+ *               employmentType:
+ *                 type: string
+ *                 enum: [FULL_TIME, TRAINEE, INTERN, CONTRACT, OTHER]
+ *               probationMonths:
+ *                 type: integer
+ *                 example: 3
+ *               isActive:
+ *                 type: boolean
+ *               rules:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     leaveTypeId:
+ *                       type: string
+ *                     annualAllocation:
+ *                       type: number
+ *                     maxPerRequest:
+ *                       type: number
+ *                     maxPerYear:
+ *                       type: number
+ *                     maxConsecutiveDays:
+ *                       type: number
+ *                     allowDuringProbation:
+ *                       type: boolean
+ *                     attachmentRequired:
+ *                       type: boolean
+ *                     priorNoticeDays:
+ *                       type: integer
+ *                     sandwichLeaveAllowed:
+ *                       type: boolean
+ *                     countMode:
+ *                       type: string
+ *                       enum: [WORKING_DAYS, CALENDAR_DAYS]
+ *                     isPaid:
+ *                       type: boolean
+ *                     carryForwardAllowed:
+ *                       type: boolean
+ *                     carryForwardLimit:
+ *                       type: number
+ *                     accrualFrequency:
+ *                       type: string
+ *                       enum: [MONTHLY, QUARTERLY, YEARLY]
+ *                     accrualAmount:
+ *                       type: number
+ *     responses:
+ *       200:
+ *         description: Leave policy created or updated successfully
+ *
+ *   get:
+ *     summary: Get all leave policies
+ *     tags: [Leave]
+ *     responses:
+ *       200:
+ *         description: Leave policies fetched successfully
+ */
+export const upsertLeavePolicy = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = (req as any).user;
+
+        const {
+            id,
+            name,
+            employmentType,
+            probationMonths,
+            isActive,
+            rules
+        } = req.body;
+
+        if(!name.trim()){
+            return res.status(400).json({
+                status: false,
+                message: "Leave policy name is required"
+            })
+        }
+        if(!employmentType.trim()){
+            return res.status(400).json({
+                status: false,
+                message: "Employment type is required"
+            })
+        }
+
+        if(!Array.isArray(rules) || !rules.length){
+            return res.status(400).json({
+                status: false,
+                message: "At least one leave rule is required"
+            })
+        }
+
+        const payload = {
+            id: id ?? undefined,// for update if id present
+            name: name.trim(),
+            employmentType,
+            probationMonths: probationMonths !== undefined && probationMonths !== null ? Number(probationMonths) : undefined,
+            isActive: isActive !== undefined ? Boolean(isActive) : true,
+            rules: rules.map((rule: any) => ({
+                leaveTypeId: rule.leaveTypeId,
+                annualAllocation: Number(rule.annualAllocation),
+                maxPerRequest: rule.maxPerRequest !== undefined ? Number(rule.maxPerRequest) : undefined,
+                maxPerYear: rule.maxPerYear !== undefined ? Number(rule.maxPerYear) : undefined,
+                maxConsecutiveDays: rule.maxConsecutiveDays !== undefined ? Number(rule.maxConsecutiveDays) : undefined,
+                allowDuringProbation: rule.allowDuringProbation !== undefined ? Boolean(rule.allowDuringProbation) : false,
+                attachmentRequired: rule.attachmentRequired !== undefined ? Boolean(rule.attachmentRequired) : false,
+                priorNoticeDays: rule.priorNoticeDays !== undefined ? Number(rule.priorNoticeDays) : undefined,
+                sandwichLeaveAllowed: rule.sandwichLeaveAllowed !== undefined ? Boolean(rule.sandwichLeaveAllowed) : false,
+                countMode: rule.countMode || "WORKING_DAYS",
+                isPaid: rule.isPaid !== undefined ? Boolean(rule.isPaid) : true,
+                carryForwardAllowed: rule.carryForwardAllowed !== undefined ? Boolean(rule.carryForwardAllowed) : false,
+                carryForwardLimit: rule.carryForwardLimit !== undefined ? Number(rule.carryForwardLimit) : undefined,
+                accrualFrequency: rule.accrualFrequency || "MONTHLY",
+                accrualAmount: rule.accrualAmount !== undefined ? Number(rule.accrualAmount) : undefined,
+            }))
+        }
+        
+        const result = await LeaveService.upsertLeavePolicy(actor.tenantId, payload);
+        if(!result) {
+            return res.status(404).json({
+                status: false,
+                message: "Failed to create leave policy"
+            })
+        }
+        return res.status(200).json({
+            status: true,
+            message: id ? "Leave policy updated successfully" : "Leave policy created successfully",
+            data: result
+        })
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to create leave policy",
+            error: error.message
+        })
+    }
+}
+
+// Get Leave Policies --------- Admin and Managers
+
+export const getLeavePolicies = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const data = await LeaveService.getLeavePolicies(actor.tenantId);
+        if(!data) {
+            return handleError(res,
+                new Error("No leave policies found"),
+                "Failed to fetch leave policies"
+            )
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Leave policies fetched successfully",
+            data
+        })
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to fetch leave policies",
+            error: error.message
+        })
+    }
+}
+
+/* ------------- Upsert Approval Policy --------- Admin and Managers */
+
+/**
+ * @swagger
+ * /leave/approval-policy:
+ *   post:
+ *     summary: Create or update an approval policy
+ *     tags: [Leave]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - levels
+ *             properties:
+ *               id:
+ *                 type: string
+ *               name:
+ *                 type: string
+ *               leavePolicyId:
+ *                 type: string
+ *               leaveTypeId:
+ *                 type: string
+ *               departmentId:
+ *                 type: string
+ *               designationId:
+ *                 type: string
+ *               isActive:
+ *                 type: boolean
+ *               levels:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - level
+ *                     - approverType
+ *                   properties:
+ *                     level:
+ *                       type: integer
+ *                       example: 1
+ *                     approverType:
+ *                       type: string
+ *                       enum: [REPORTING_MANAGER, DEPARTMENT_MANAGER, COMPANY_ADMIN, SPECIFIC_USER, ROLE]
+ *                     roleId:
+ *                       type: string
+ *                     userId:
+ *                       type: string
+ *                     minApprovals:
+ *                       type: integer
+ *                       example: 1
+ *     responses:
+ *       200:
+ *         description: Approval policy created or updated successfully
+ *
+ *   get:
+ *     summary: Get all approval policies
+ *     tags: [Leave]
+ *     responses:
+ *       200:
+ *         description: Approval policies fetched successfully
+ */
+export const upsertApprovalPolicy = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = (req as any).user;
+
+        const {
+            id,
+            name,
+            leavePolicyId,
+            leaveTypeId,
+            departmentId,
+            designationId,
+            isActive,
+            levels
+        } = req.body;
+
+        if (!name?.trim()) {
+            return res.status(400).json({
+                status: false,
+                message: "Approval policy name is required"
+            })
+        }
+
+        if (!Array.isArray(levels) || !levels.length) {
+        return res.status(400).json({
+            status: false,
+            message: "At least one approval level is required"
+        });
+        }
+
+        const payload = {
+            id: id ?? undefined,
+            name: name.trim(),
+            leavePolicyId: leavePolicyId ?? null,
+            leaveTypeId: leaveTypeId ?? null,
+            departmentId: departmentId ?? null,
+            designationId: designationId ?? null,
+            isActive: isActive !== undefined ? Boolean(isActive) : true,
+            levels: levels.map((level: any) => ({
+                level: Number(level.level),
+                approverType: level.approverType,
+                roleId: level.roleId ?? undefined,
+                userId: level.userId ?? undefined,
+                minApprovals:
+                level.minApprovals !== undefined && level.minApprovals !== null
+                    ? Number(level.minApprovals)
+                    : 1
+            }))
+        };
+
+        for (const level of payload.levels) {
+            if (!level.level || level.level < 1) {
+                return res.status(400).json({
+                status: false,
+                message: "Each approval level must be a positive number"
+                });
+            }
+
+            if (!level.approverType) {
+                return res.status(400).json({
+                status: false,
+                message: "Approver type is required for each level"
+                });
+            }
+
+            if (level.approverType === "ROLE" && !level.roleId) {
+                return res.status(400).json({
+                status: false,
+                message: "roleId is required when approverType is ROLE"
+                });
+            }
+
+            if (level.approverType === "SPECIFIC_USER" && !level.userId) {
+                return res.status(400).json({
+                status: false,
+                message: "userId is required when approverType is SPECIFIC_USER"
+                });
+            }
+
+            if (level.minApprovals && level.minApprovals < 1) {
+                return res.status(400).json({
+                status: false,
+                message: "minApprovals must be at least 1"
+                });
+            }
+        }
+
+        const uniqueLevels = new Set(payload.levels.map((l) => l.level));
+            if (uniqueLevels.size !== payload.levels.length) {
+            return res.status(400).json({
+                status: false,
+                message: "Approval levels must be unique"
+            });
+        }
+
+        const result = await LeaveService.upsertApprovalPolicy(actor.tenantId, payload);
+
+        return res.status(200).json({
+            status: true,
+            message: id
+                ? "Approval policy updated successfully"
+                : "Approval policy created successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to create approval policy",
+            error: error.message
+        })
+    }
+}
+
+// Get Approval Policies --------- Admin and Managers
+
+export const getApprovalPolicies = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = (req as any).user;
+
+        const result = await LeaveService.getApprovalPolicies(actor.tenantId);
+
+        if(!result || result.length === 0) {
+            return res.status(404).json({
+                status: false,
+                message: "No approval policies found"
+            })
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Approval policies fetched successfully",
+            data: result
+        })
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,            
+            message: "Failed to fetch approval policies",
+            error: error.message
+        })
+    }
+}
+
+/* --------- Create Holiday Calendar --------- Admin -- COMPANY_ADMIN  ----- */
+
+/**
+ * @swagger
+ * /leave/holiday-calendar:
+ *   post:
+ *     summary: Create a holiday calendar and auto-import holidays for region calendars
+ *     tags: [Leave]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - regionType
+ *             properties:
+ *               name:
+ *                 type: string
+ *               regionType:
+ *                 type: string
+ *                 enum: [GLOBAL, COUNTRY, STATE, CITY, CUSTOM]
+ *               country:
+ *                 type: string
+ *               state:
+ *                 type: string
+ *               city:
+ *                 type: string
+ *               year:
+ *                 type: integer
+ *                 example: 2026
+ *               isDefault:
+ *                 type: boolean
+ *               isActive:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Holiday calendar created successfully
+ */
+export const createHolidayCalendar = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = (req as any).user;
+
+        const {
+            name,
+            regionType,
+            country,
+            state,
+            city,
+            year,
+            isDefault,
+            isActive
+        } = req.body;
+
+        if(!name.trim()) {
+            return res.status(400).json({
+                status: false,
+                message: "Holiday calendar name is required"
+            })
+        }
+        if(regionType === "COUNTRY" && !country) {
+            return res.status(400).json({
+                status: false,
+                message: "Country is required for region type COUNTRY"
+            })
+        }
+        const payload = {
+            name: name.trim(),
+            regionType,
+            country: country ?? undefined,
+            state: state ?? undefined,
+            city: city ?? undefined,
+            year: year !== undefined && year !== null ? Number(year) : undefined,
+            isDefault: isDefault !== undefined ? Boolean(isDefault) : false,
+            isActive: isActive !== undefined ? Boolean(isActive) : true
+        };
+
+        const result = await LeaveService.createHolidayCalendar(actor.tenantId, payload);
+        if(!result) {
+            return res.status(404).json({
+                status: false,
+                message: "Failed to create holiday calendar"
+            })
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Holiday calendar created successfully",
+            data: result
+        })
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to create holiday calendar",
+            error: error.message
+        })
+    }
+}
+
+// Create Holiday in Calendar
+/**
+ * @swagger
+ * /leave/holiday:
+ *   post:
+ *     summary: Add a holiday to an existing calendar
+ *     tags: [Leave]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - holidayCalendarId
+ *               - name
+ *               - date
+ *             properties:
+ *               holidayCalendarId:
+ *                 type: string
+ *               name:
+ *                 type: string
+ *               date:
+ *                 type: string
+ *                 format: date
+ *               isOptional:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Holiday created successfully
+ */
+export const createHoliday = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = (req as any).user;
+
+        const {
+            holidayCalendarId,
+            name,
+            date,
+            isOptional
+        } = req.body;
+
+        if(!holidayCalendarId) {
+            return res.status(400).json({
+                status: false,
+                message: "Holiday calendar ID is required"
+            })
+        }
+        if(!name.trim()) {
+            return res.status(400).json({
+                status: false,
+                message: "Holiday name is required"
+            })
+        }
+        if(!date) {
+            return res.status(400).json({
+                status: false,
+                message: "Holiday date is required"
+            })
+        }
+
+        const result = await LeaveService.createHoliday(actor.tenantId, {
+            holidayCalendarId,
+            name: name.trim(),
+            date: new Date(date).toString(),
+            isOptional: isOptional !== undefined ? Boolean(isOptional) : false
+        });
+        if(!result) {
+            return res.status(404).json({
+                status: false,
+                message: "Failed to create holiday"
+            })
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Holiday created successfully",
+            data: result
+        })
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to create holiday",
+            error: error.message
+        })
+    }
+}
+
+/** ______________ ADMIN POV _______________________ */
+/**
+ * @swagger
+ * /leave/holiday-calendars:
+ *   get:
+ *     summary: Get all holiday calendars
+ *     tags: [Leave]
+ *     responses:
+ *       200:
+ *         description: Holiday calendars fetched successfully
+ *
+ * /leave/holiday-calendar/active:
+ *   get:
+ *     summary: Get active default holiday calendar
+ *     tags: [Leave]
+ *     responses:
+ *       200:
+ *         description: Active holiday calendar fetched successfully
+ */
+export const getHolidaysCalendars = async (req: AuthRequest, res: Response) => {
+  try {
+    const actor = req.user;
+
+    const result = await LeaveService.getHolidaysCalendars(actor.tenantId);
+    if (!result || result.length === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No holiday calendars found"
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Holiday calendars fetched successfully",
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(error?.statusCode || 500).json({
+      status: false,
+      message: error?.message || "Failed to fetch holiday calendars"
+    });
+  }
+};
+
+/** ------------  USER POV ______________________ */
+export const getActiveHolidayCalendar = async (req: AuthRequest, res: Response) => {
+  try {
+    const actor = req.user;
+
+    const result = await LeaveService.getActiveHolidayCalendar(actor.tenantId);
+    if (!result) {
+      return res.status(404).json({
+        status: false,
+        message: "No active holiday calendar found"
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Active holiday calendar fetched successfully",
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(error?.statusCode || 500).json({
+      status: false,
+      message: error?.message || "Failed to fetch active holiday calendar"
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /leave/work-week:
+ *   put:
+ *     summary: Update tenant work week
+ *     tags: [Leave]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - workingDays
+ *             properties:
+ *               workingDays:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   enum: [SUNDAY, MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY]
+ *     responses:
+ *       200:
+ *         description: Work week updated successfully
+ *
+ *   get:
+ *     summary: Get tenant work week
+ *     tags: [Leave]
+ *     responses:
+ *       200:
+ *         description: Work week fetched successfully
+ */
+/** ------------  Update Work Week  -- ORGANIZATION settings ______________________ */
+export const updateWorkWeek = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = req.user;
+        const { workingDays } = req.body;
+
+        const validDays = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+        if (!Array.isArray(workingDays) || workingDays.length === 0) {
+            return res.status(400).json({
+                status: false,
+                message: "workingDays must be a non-empty array"
+            });
+        }
+        for (const day of workingDays) {
+            if (!validDays.includes(day)) {
+                return res.status(400).json({
+                    status: false,
+                    message: `Invalid day: ${day}. Valid days are ${validDays.join(", ")}`
+                });
+            }
+        }
+
+        const result = await LeaveService.updateWorkWeek(actor.tenantId, workingDays);
+        if (!result) {
+            return res.status(404).json({
+                status: false,
+                message: "Failed to update work week"
+            });
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Work week updated successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(error?.statusCode || 500).json({
+            status: false,
+            message: error?.message || "Failed to update work week"
+        });
+    }
+}
+
+export const getWorkWeek = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = req.user;
+        const result = await LeaveService.getWorkWeek(actor.tenantId);
+        if (!result) {
+            return res.status(404).json({
+                status: false,
+                message: "Failed to fetch work week"
+            });
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Work week fetched successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(error?.statusCode || 500).json({
+            status: false,
+            message: error?.message || "Failed to fetch work week"
+        });
+    }
+}
+
+
+
+/*** _____________ LEAVE PART _____________________ */
+
+
+// ------------Apply Leave -------------------------
 
 /**
  * @swagger
@@ -133,6 +881,10 @@ export const getLeaveTypes = async (req: Request, res: Response) => {
  *         multipart/form-data:
  *           schema:
  *             type: object
+ *             required:
+ *               - leaveTypeId
+ *               - startDate
+ *               - endDate
  *             properties:
  *               leaveTypeId:
  *                 type: string
@@ -150,12 +902,8 @@ export const getLeaveTypes = async (req: Request, res: Response) => {
  *                   type: string
  *                   format: binary
  *     responses:
- *       200:
+ *       201:
  *         description: Leave applied successfully
- *       404:
- *         description: Failed to apply for leave
- *       500:
- *         description: Failed to apply for leave
  */
 export const applyLeave = async (req: Request, res: Response) => {
     try {
@@ -168,7 +916,7 @@ export const applyLeave = async (req: Request, res: Response) => {
         } = req.body;
 
         let attachmentUrls: string[] = [];
-        const files = (req as any).file;
+        const files = (req as any).files || [];
 
         if(files && files.length > 0) {
             for(const file of files) {
@@ -207,8 +955,40 @@ export const applyLeave = async (req: Request, res: Response) => {
     }
 }
 
+// Get My Leave Balance --------- Users
+
 /**
  * @swagger
+ * /leave/balance/me:
+ *   get:
+ *     summary: Get my leave balance
+ *     tags: [Leave]
+ *     responses:
+ *       200:
+ *         description: Leave balance fetched successfully
+ *
+ * /leave/requests:
+ *   get:
+ *     summary: Get all leave requests for tenant
+ *     tags: [Leave]
+ *     responses:
+ *       200:
+ *         description: Leave requests fetched successfully
+ *
+ * /leave/requests/{userId}:
+ *   get:
+ *     summary: Get leave requests for a specific user
+ *     tags: [Leave]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Leave requests fetched successfully
+ *
  * /leave/cancel/{requestId}:
  *   post:
  *     summary: Cancel a leave request
@@ -231,13 +1011,110 @@ export const applyLeave = async (req: Request, res: Response) => {
  *     responses:
  *       200:
  *         description: Leave request cancelled successfully
- *       400:
- *         description: Request ID is required
- *       404:
- *         description: Leave request not found or cannot be cancelled
- *       500:
- *         description: Failed to cancel leave request
+ *
+ * /leave/approve/{requestId}:
+ *   post:
+ *     summary: Approve a leave request
+ *     tags: [Leave]
+ *     parameters:
+ *       - in: path
+ *         name: requestId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               remarks:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Leave request approved successfully
+ *
+ * /leave/reject/{requestId}:
+ *   post:
+ *     summary: Reject a leave request
+ *     tags: [Leave]
+ *     parameters:
+ *       - in: path
+ *         name: requestId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               remarks:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Leave request rejected successfully
  */
+
+
+
+export const getMyLeaveBalance = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = req.user;
+        const result = await LeaveService.getMyLeaveBalance(actor.tenantId, actor.id);
+        if(!result) {
+            return res.status(404).json({
+                status: false,
+                message: "Failed to fetch leave balance"
+            })
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Leave balance fetched successfully",
+            data: result
+        })
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to fetch leave balance",
+            error: error.message
+        })
+    }
+}
+
+// Get Leave Requests --------- Admin and Managers
+export const getLeaveRequests = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const { userId } = (req as any).params;
+
+
+        const result = await LeaveService.getLeaveRequests(actor.tenantId, userId);
+
+        if(!result || result.length === 0) {
+            return res.status(404).json({
+                status: false,
+                message: "No leave requests found",
+                data: []
+            })
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Leave requests fetched successfully",
+            data: result
+        })
+
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to fetch leave requests",
+            error: error.message
+        })
+    }
+}
+
+// Cancel Leave Request --------- Users
 export const cancelLeaveRequests = async (req: Request, res: Response) => {
     try {
         const actor = (req as any).user;
@@ -276,90 +1153,9 @@ export const cancelLeaveRequests = async (req: Request, res: Response) => {
     }
 }
 
-/**
- * @swagger
- * /leave/requests/{userId}:
- *   get:
- *     summary: Get leave requests for a user
- *     tags: [Leave]
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Leave requests fetched successfully
- *       400:
- *         description: User ID is required
- *       404:
- *         description: No leave requests found
- *       500:
- *         description: Failed to fetch leave requests
- */
-export const getLeaveRequests = async (req: Request, res: Response) => {
-    try {
-        const actor = (req as any).user;
-        const { userId } = (req as any).params;
 
+// Approve / Reject Leave Request --------- Admin and Managers
 
-        const result = await LeaveService.getLeaveRequests(actor.tenantId, userId);
-
-        if(!result || result.length === 0) {
-            return res.status(404).json({
-                status: false,
-                message: "No leave requests found",
-                data: []
-            })
-        }
-        return res.status(200).json({
-            status: true,
-            message: "Leave requests fetched successfully",
-            data: result
-        })
-
-    } catch (error: any) {
-        return res.status(500).json({
-            status: false,
-            message: "Failed to fetch leave requests",
-            error: error.message
-        })
-    }
-}
-
-
-/**
- * @swagger
- * /leave/approve/{requestId}:
- *   post:
- *     summary: Approve a leave request
- *     tags: [Leave]
- *     parameters:
- *       - in: path
- *         name: requestId
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               remarks:
- *                 type: string
- *     responses:
- *       200:
- *         description: Leave request approved successfully
- *       400:
- *         description: Request ID is required
- *       404:
- *         description: Leave request not found or already processed
- *       500:
- *         description: Failed to approve leave request
- */
 export const approveLeaveRequests = async (req: Request, res: Response) => {
     try {
         const actor = (req as any).user;
@@ -398,37 +1194,6 @@ export const approveLeaveRequests = async (req: Request, res: Response) => {
     }
 }
 
-/**
- * @swagger
- * /leave/reject/{requestId}:
- *   post:
- *     summary: Reject a leave request
- *     tags: [Leave]
- *     parameters:
- *       - in: path
- *         name: requestId
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               remarks:
- *                 type: string
- *     responses:
- *       200:
- *         description: Leave request rejected successfully
- *       400:
- *         description: Request ID is required
- *       404:
- *         description: Leave request not found or already processed
- *       500:
- *         description: Failed to reject leave request
- */
 export const rejectLeaveRequests = async (req: Request, res: Response) => {
     try {
         const actor = (req as any).user;

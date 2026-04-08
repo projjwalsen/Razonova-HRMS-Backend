@@ -12,34 +12,42 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 enum TenantStatus {
   PENDING
   APPROVED
   REJECTED
 }
 
-model Tenant { // COMPANY
-  id        String   @id @default(uuid())
-  name      String
+model Tenant {
+  id   String @id @default(uuid())
+  name String
 
-  status    TenantStatus  @default(PENDING) //🔥 WAIT FOR APPROVAL
-  isActive  Boolean  @default(true)
-  isSystem  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  users     User[]
-  roles     Role[]
-  organization Organization[]
-  settings   Setting[]
-  departments Department[]
-  designations Designation[]
+  status             TenantStatus         @default(PENDING) //🔥 WAIT FOR APPROVAL
+  isActive           Boolean              @default(true)
+  isSystem           Boolean              @default(false)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  users              User[]
+  roles              Role[]
+  organization       Organization[]
+  settings           Setting[]
+  departments        Department[]
+  designations       Designation[]
   tenantSubscription TenantSubscription[]
-  onboardingInvites OnboardingInvite[]
-  attendanceConfigs AttendanceConfig[]
-  attendances Attendance[]
-  leaveTypes LeaveType[]
-  leaveRequests LeaveRequest[]
-  payrolls Payroll[]
+  onboardingInvites  OnboardingInvite[]
+  attendanceConfigs  AttendanceConfig[]
+  attendances        Attendance[]
+
+  leaveTypes            LeaveType[]
+  leaveRequests         LeaveRequest[]
+  leavePolicies         LeavePolicy[]
+  leaveApprovalPolicies LeaveApprovalPolicy[]
+  leaveBalance          LeaveBalance[]
+  holidayCalendars      HolidayCalendar[]
+  holidays              Holiday[]
+
+  payrolls      Payroll[]
   payStructures PayStructure[]
 }
 
@@ -47,31 +55,33 @@ enum RoleType {
   SYSTEM
   TENANT
 }
+
 model Role {
-  id        String   @id @default(uuid())
-  name      String
-  type      RoleType
-  tenantId  String?
-  tenant    Tenant?   @relation(fields: [tenantId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  userRoles UserRole[]
-  rolePermissions RolePermission[]
-  onboardingInvites OnboardingInvite[]
+  id                        String                     @id @default(uuid())
+  name                      String
+  type                      RoleType
+  tenantId                  String?
+  tenant                    Tenant?                    @relation(fields: [tenantId], references: [id])
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  userRoles                 UserRole[]
+  rolePermissions           RolePermission[]
+  onboardingInvites         OnboardingInvite[]
+  leaveApprovalPolicyLevels LeaveApprovalPolicyLevel[]
 
   @@unique([name, tenantId]) // Ensure role names are unique within a tenant
 }
 
 model Permission {
-  id        String   @id @default(uuid())
-  name      String   
-  scope     RoleType @default(SYSTEM)   // e.g., SYSTEM | TENANT
-  module    String?   // e.g., EMPLOYEE_MANAGEMENT
-  action    String?   // e.g., CREATE, READ, UPDATE, DELETE
-  
+  id     String   @id @default(uuid())
+  name   String
+  scope  RoleType @default(SYSTEM) // e.g., SYSTEM | TENANT
+  module String? // e.g., EMPLOYEE_MANAGEMENT
+  action String? // e.g., CREATE, READ, UPDATE, DELETE
+
   createdAt DateTime @default(now())
 
-  roles     RolePermission[]
+  roles RolePermission[]
 
   @@unique([scope, module, action]) // Ensure unique permissions based on scope, module, and action
 }
@@ -80,21 +90,21 @@ model RolePermission {
   roleId       String
   permissionId String
 
-  role         Role       @relation(fields: [roleId], references: [id])
-  permission   Permission @relation(fields: [permissionId], references: [id])
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
 
   @@id([roleId, permissionId])
 }
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  phone     String?  @unique
-  password  String
+  id       String  @id @default(uuid())
+  name     String
+  email    String  @unique
+  phone    String? @unique
+  password String
 
-  tenantId  String?
-  tenant    Tenant?   @relation(fields: [tenantId], references: [id]) // COMPANY
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id]) // COMPANY
 
   departmentId String?
   department   Department? @relation("DepartmentUsers", fields: [departmentId], references: [id])
@@ -102,53 +112,55 @@ model User {
   designationId String?
   designation   Designation? @relation(fields: [designationId], references: [id])
 
-  managerId    String?
-  manager      User?    @relation("UserReportingManager", fields: [managerId], references: [id])
-  reportees      User[]   @relation("UserReportingManager")
+  managerId String?
+  manager   User?   @relation("UserReportingManager", fields: [managerId], references: [id])
+  reportees User[]  @relation("UserReportingManager")
 
-  isActive  Boolean  @default(true)
+  isActive Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  managedDepartment Department[] @relation("DepartmentLead")
+  managedDepartment Department[]       @relation("DepartmentLead")
   onboardingInvites OnboardingInvite[] @relation("OnboardingInviteManager")
-  employeeProfile EmployeeProfile?
+  employeeProfile   EmployeeProfile?
 
-  userRoles UserRole[]
-  attendances Attendance[]
-  leaveRequests LeaveRequest[]
-  leaveRequestAsReporting LeaveRequest[] @relation("LeaveRequestReportingManager")
-  leaveRequestAsAdmin LeaveRequest[] @relation("LeaveRequestCompanyAdmin")
-  leaveApprovalIsGiven LeaveApproval[]
-  payrolls Payroll[]
-  bankAccount EmployeeBankAccount?
+  userRoles                 UserRole[]
+  attendances               Attendance[]
+  leaveRequests             LeaveRequest[]
+  leaveApprovalPolicyLevels LeaveApprovalPolicyLevel[]
+  leaveApprovalIsGiven      LeaveApproval[]
+  payrolls                  Payroll[]
+  bankAccount               EmployeeBankAccount?
+  leaveBalances             LeaveBalance[]
 }
 
 model UserRole {
-  id        String   @id @default(uuid())
-  userId    String
-  roleId    String
-  user      User     @relation(fields: [userId], references: [id])
-  role      Role     @relation(fields: [roleId], references: [id])
+  id     String @id @default(uuid())
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id])
+  role   Role   @relation(fields: [roleId], references: [id])
+
   @@unique([userId, roleId])
 }
 
-// model ManagerProfile {
-//   id       String   @id @default(uuid())
-//   userId    String   @unique
-//   teamSize Int?
-//   user      User     @relation(fields: [userId], references: [id])
-// }
+enum HolidayRegionType {
+  GLOBAL
+  COUNTRY
+  STATE
+  CITY
+  CUSTOM
+}
 
 model Organization {
-  id       String   @id @default(uuid())
+  id       String @id @default(uuid())
   tenantId String
-  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
 
-  name     String
-  logoUrl  String?
-  industry  String?
+  name        String
+  logoUrl     String?
+  industry    String?
   companySize String?
 
   //Address
@@ -157,20 +169,20 @@ model Organization {
   city         String?
   state        String?
   country      String?
-  pinCode   String?
+  pinCode      String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Setting {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  tenantId  String?
-  tenant    Tenant?   @relation(fields: [tenantId], references: [id])
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id])
 
-  key       String
-  value     Json
+  key   String
+  value Json
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -179,67 +191,69 @@ model Setting {
 }
 
 model Department {
-  id       String   @id @default(uuid())
+  id       String @id @default(uuid())
   name     String
   tenantId String
-  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
 
   managerId String?
-  manager    User?    @relation("DepartmentLead", fields: [managerId], references: [id])
-  
-  users      User[]   @relation("DepartmentUsers")
-  designations Designation[]
-  onboardingInvites OnboardingInvite[]
-  payStructures PayStructure[]
+  manager   User?   @relation("DepartmentLead", fields: [managerId], references: [id])
+
+  users                 User[]                @relation("DepartmentUsers")
+  designations          Designation[]
+  onboardingInvites     OnboardingInvite[]
+  payStructures         PayStructure[]
+  leaveApprovalPolicies LeaveApprovalPolicy[]
 
   @@unique([name, tenantId]) // Ensure department names are unique within a tenant
 }
 
 model Designation {
-  id           String      @id @default(uuid())
-  name         String      // e.g., HR, Manager, Team Lead, Accountant
+  id   String @id @default(uuid())
+  name String // e.g., HR, Manager, Team Lead, Accountant
 
-  tenantId     String
-  tenant       Tenant      @relation(fields: [tenantId], references: [id])
-  
-  departmentId String?     // optional if designation belongs to a department
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  departmentId String? // optional if designation belongs to a department
   department   Department? @relation(fields: [departmentId], references: [id])
 
-  users        User[]      // users holding this designation
+  users             User[] // users holding this designation
   onboardingInvites OnboardingInvite[]
-  payStructures PayStructure[]
+  payStructures     PayStructure[]
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  leaveApprovalPolicies LeaveApprovalPolicy[]
 
   @@unique([name, tenantId]) // unique designation names per tenant
 }
 
 model SubscriptionPlan {
-  id          String   @id @default(uuid())
-  name        String   @unique // e.g., Free, Basic, Pro, Enterprise
-  price       Float?
-  isFree      Boolean  @default(false)
-  
-  maxUsers    Int?     // null for unlimited
-  features    Json?
-  createdAt   DateTime @default(now())
+  id     String  @id @default(uuid())
+  name   String  @unique // e.g., Free, Basic, Pro, Enterprise
+  price  Float?
+  isFree Boolean @default(false)
+
+  maxUsers  Int? // null for unlimited
+  features  Json?
+  createdAt DateTime @default(now())
 
   tenantSubscriptions TenantSubscription[]
 }
 
 model TenantSubscription {
-  id          String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  tenantId    String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id])
-  
-  planId      String
-  plan        SubscriptionPlan @relation(fields: [planId], references: [id])
-  
-  startDate   DateTime
-  endDate     DateTime?
-  isActive    Boolean  @default(true)
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  planId String
+  plan   SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  startDate DateTime
+  endDate   DateTime?
+  isActive  Boolean   @default(true)
 
   @@index([tenantId, isActive])
 }
@@ -252,13 +266,13 @@ enum OnboardingInviteStatus {
 }
 
 model OnboardingInvite {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
 
   email     String
-  token     String   @unique
+  token     String                 @unique
   status    OnboardingInviteStatus @default(PENDING)
   expiresAt DateTime
 
@@ -269,18 +283,18 @@ model OnboardingInvite {
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id])
 
-  designationId   String?
-  designation     Designation? @relation(fields: [designationId], references: [id])
+  designationId String?
+  designation   Designation? @relation(fields: [designationId], references: [id])
 
-  managerId    String?
-  manager      User?    @relation("OnboardingInviteManager", fields: [managerId], references: [id])
+  managerId String?
+  manager   User?   @relation("OnboardingInviteManager", fields: [managerId], references: [id])
 
-  roleId       String?
-  role         Role?    @relation(fields: [roleId], references: [id])
-  
-  employeeCode String?
-  joiningDate DateTime?
-  proposedSalary      Float?
+  roleId String?
+  role   Role?   @relation(fields: [roleId], references: [id])
+
+  employeeCode   String?
+  joiningDate    DateTime?
+  proposedSalary Float?
 
   submittedAt DateTime?
   completedAt DateTime?
@@ -293,13 +307,17 @@ model OnboardingInvite {
 }
 
 model EmployeeProfile {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id])
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
 
-  employeeCode String? 
-  joiningDate DateTime?
+  employeeCode   String?
+  employmentType EmploymentType?
+
+  joiningDate     DateTime?
+  probationMonths Int?
+
   salary      Float?
   dateOfBirth DateTime?
 
@@ -322,14 +340,14 @@ enum AttendanceStatus {
 }
 
 model AttendanceConfig {
-  id           String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  tenantId     String   @unique
-  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId String @unique
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
 
   checkInTime  String // "09:00"
   checkOutTime String // "18:00"
-  graceMinutes Int    // minutes after check-in time to be considered late
+  graceMinutes Int // minutes after check-in time to be considered late
 
   halfDayMinutes Int @default(240) // minutes threshold for half-day - 4 hours
   fullDayMinutes Int @default(480) // minutes threshold for full-day - 8 hours
@@ -339,21 +357,21 @@ model AttendanceConfig {
 }
 
 model Attendance {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
 
-  date      DateTime // date of attendance
-  checkInAt  DateTime?
-  checkOutAt DateTime?
-  status    AttendanceStatus  @default(PRESENT)
-  isLate    Boolean  @default(false)
-  workedMinutes Int     @default(0)
-  remarks   String?
+  date          DateTime // date of attendance
+  checkInAt     DateTime?
+  checkOutAt    DateTime?
+  status        AttendanceStatus @default(PRESENT)
+  isLate        Boolean          @default(false)
+  workedMinutes Int              @default(0)
+  remarks       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -361,6 +379,14 @@ model Attendance {
   @@unique([userId, date])
   @@index([userId, date])
   @@index([tenantId, date])
+}
+
+enum EmploymentType {
+  FULL_TIME
+  TRAINEE
+  INTERN
+  CONTRACT
+  OTHER
 }
 
 enum LeaveTypeCode {
@@ -386,59 +412,224 @@ enum LeaveApprovalAction {
   REJECT
 }
 
+enum LeaveApproverType {
+  REPORTING_MANAGER
+  DEPARTMENT_MANAGER
+  COMPANY_ADMIN
+  SPECIFIC_USER
+  ROLE
+}
+
+enum LeaveAccrualFrequency {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum LeaveCountMode {
+  CALENDAR_DAYS
+  WORKING_DAYS
+}
+
+model LeaveBalance {
+  id String @id @default(uuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  leaveTypeId String
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  year Int
+
+  allocatedDays      Float @default(0) // total allocated leaves for the year
+  takenDays          Float @default(0) // total leaves taken
+  carriedForwardDays Float @default(0) // leaves carried forward from previous year
+  usedDays           Float @default(0) // total used leaves (taken + carried forward)
+  remainingDays      Float @default(0) // calculated as allocated + carried forward - used
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, userId, leaveTypeId, year])
+  @@index([tenantId, userId, year])
+}
+
 model LeaveType {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
 
-  name      String   // e.g., CASUAL, SICK, MATERNITY
-  typeCode  LeaveTypeCode?
-  maxLimits Int?     // e.g., max 12 casual leaves per year
-  attachmentRequired Boolean @default(false)
-  priorNoticeDays Int?  @default(0)
-  allowHalfDay Boolean @default(false)
-  sandwichLeaveAllowed Boolean @default(false) // if true, allows taking leave in between two working days
-  isActive  Boolean  @default(true)
+  name     String // e.g., CASUAL, SICK, MATERNITY
+  typeCode LeaveTypeCode?
+  isActive Boolean        @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leaveRequests    LeaveRequest[]
+  leavePolicyRules LeavePolicyRule[]
+  approvalPolicies LeaveApprovalPolicy[]
+  leaveBalances    LeaveBalance[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+}
+
+model LeavePolicy {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  name            String
+  employmentType  EmploymentType?
+  probationMonths Int?            @default(0)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rules            LeavePolicyRule[]
+  leaveRequests    LeaveRequest[]
+  approvalPolicies LeaveApprovalPolicy[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, employmentType, isActive])
+}
+
+model LeavePolicyRule {
+  id String @id @default(uuid())
+
+  leavePolicyId String
+  leavePolicy   LeavePolicy @relation(fields: [leavePolicyId], references: [id])
+
+  leaveTypeId String
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  annualAllocation   Float  @default(0)
+  maxPerRequest      Float?
+  maxPerYear         Float?
+  maxConsecutiveDays Float?
+
+  allowDuringProbation Boolean @default(false)
+  attachmentRequired   Boolean @default(false)
+  priorNoticeDays      Int? // number of days in advance the leave request must be made
+  sandwichLeaveAllowed Boolean @default(false)
+  countMode             LeaveCountMode @default(WORKING_DAYS)
+
+  isPaid Boolean @default(true)
+
+  carryForwardAllowed Boolean @default(false)
+  carryForwardLimit   Float? // max days that can be carried forward
+
+  accrualFrequency LeaveAccrualFrequency?
+  accrualAmount    Float? // amount to accrue based on frequency (e.g., 1
+
+  regionHolidayCalenderId String? // if leave accrual is based on region holidays
+  holidayCalendar         HolidayCalendar? @relation(fields: [regionHolidayCalenderId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   leaveRequests LeaveRequest[]
 
+  @@unique([leavePolicyId, leaveTypeId])
+  @@index([leaveTypeId])
+}
+
+model LeaveApprovalPolicy {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  name String
+
+  leavePolicyId String?
+  leavePolicy   LeavePolicy? @relation(fields: [leavePolicyId], references: [id])
+
+  leaveTypeId String?
+  leaveType   LeaveType? @relation(fields: [leaveTypeId], references: [id])
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  designationId String?
+  designation   Designation? @relation(fields: [designationId], references: [id])
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  levels        LeaveApprovalPolicyLevel[]
+  leaveRequests LeaveRequest[]
+
   @@unique([tenantId, name])
-  @@index([tenantId, isActive])
+}
+
+model LeaveApprovalPolicyLevel {
+  id String @id @default(uuid())
+
+  approvalPolicyId String
+  approvalPolicy   LeaveApprovalPolicy @relation(fields: [approvalPolicyId], references: [id])
+
+  level        Int // 1 for first level approver, 2 for second level, etc.
+  approverType LeaveApproverType
+
+  roleId String? // if approverType is ROLE
+  role   Role?   @relation(fields: [roleId], references: [id])
+
+  userId String? // if approverType is SPECIFIC_USER
+  user   User?   @relation(fields: [userId], references: [id])
+
+  minApprovals Int? @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([approvalPolicyId, level])
+  @@index([approvalPolicyId, level])
 }
 
 model LeaveRequest {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
 
   leaveTypeId String
   leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  leavePolicyId String
+  leavePolicy   LeavePolicy @relation(fields: [leavePolicyId], references: [id])
+
+  leavePolicyRuleId String?
+  leavePolicyRule   LeavePolicyRule? @relation(fields: [leavePolicyRuleId], references: [id])
+
+  approvalPolicyId String?
+  approvalPolicy   LeaveApprovalPolicy? @relation(fields: [approvalPolicyId], references: [id])
 
   startDate DateTime
   endDate   DateTime
   totalDays Float // can be fractional for half-day leaves 0.5
 
-  reason    String?
+  reason         String?
   attachmentUrls String[]
 
-  reportingManagerId String?
-  reportingManager   User?    @relation("LeaveRequestReportingManager", fields: [reportingManagerId], references: [id])
+  currentApprovalLevel Int                @default(1) // tracks which approval level the request is currently at
+  status               LeaveRequestStatus @default(PENDING)
 
-  companyAdminId String?
-  companyAdmin   User?    @relation("LeaveRequestCompanyAdmin", fields: [companyAdminId], references: [id])
-
-  status    LeaveRequestStatus @default(PENDING)
-
-  managerApprovedAt DateTime?
-  adminApprovedAt DateTime?
+  approvedAt DateTime?
   rejectedAt DateTime?
 
   createdAt DateTime @default(now())
@@ -451,22 +642,71 @@ model LeaveRequest {
 }
 
 model LeaveApproval {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
 
   leaveRequestId String
   leaveRequest   LeaveRequest @relation(fields: [leaveRequestId], references: [id])
 
-  approverId String
-  approver   User     @relation(fields: [approverId], references: [id])
+  level Int // approval level this action corresponds to
 
-  status    LeaveApprovalAction @default(PENDING)
-  remarks   String?
+  approverId String
+  approver   User   @relation(fields: [approverId], references: [id])
+
+  decision LeaveApprovalAction @default(PENDING)
+  remarks  String?
+  actedAt  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([leaveRequestId, approverId]) // Ensure one approval action per approver per leave request
-  @@index([approverId, status])
+  @@unique([leaveRequestId, approverId, level]) // Ensure one approval action per approver per leave request
+  @@index([approverId, decision])
+  @@index([leaveRequestId, level])
+}
+
+model HolidayCalendar {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  name       String
+  regionType HolidayRegionType @default(GLOBAL)
+  country    String?
+  state      String?
+  city       String?
+  year       Int?
+
+  isDefault Boolean @default(false) // if true, applies to all employees without specific calendar
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  holidays         Holiday[]
+  leavePolicyRules LeavePolicyRule[]
+
+  @@unique([tenantId, name])
+}
+
+model Holiday {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  holidayCalendarId String
+  holidayCalendar   HolidayCalendar @relation(fields: [holidayCalendarId], references: [id])
+
+  name       String
+  date       DateTime
+  isOptional Boolean  @default(false) // if true, employees can choose to work on this day or take it as leave
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([holidayCalendarId, date])
+  @@index([tenantId, date])
 }
 
 enum PayrollStatus {
@@ -506,11 +746,10 @@ enum DisbursementStatus {
 }
 
 model EmployeeBankAccount {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  userId            String   @unique
-  user              User     @relation(fields: [userId], references: [id])
-
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
 
   accountHolderName String
   accountNumber     String
@@ -519,128 +758,127 @@ model EmployeeBankAccount {
   branchName        String?
   upiId             String?
 
-  isVerified        Boolean  @default(false)
-  isPrimary         Boolean  @default(true)
+  isVerified Boolean @default(false)
+  isPrimary  Boolean @default(true)
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model PayStructure {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  tenantId          String
-  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
 
-  name              String
-  departmentId      String?
-  department        Department? @relation(fields: [departmentId], references: [id])
+  name         String
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
 
-  designationId     String?
-  designation       Designation? @relation(fields: [designationId], references: [id])
-  
-  isDefault         Boolean  @default(false) // if true, applies to all employees without specific structure
-  isActive          Boolean  @default(true)
+  designationId String?
+  designation   Designation? @relation(fields: [designationId], references: [id])
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  isDefault Boolean @default(false) // if true, applies to all employees without specific structure
+  isActive  Boolean @default(true)
 
-  components        PayStructureComponent[]
-  payrolls          Payroll[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  components PayStructureComponent[]
+  payrolls   Payroll[]
 
   @@unique([tenantId, name])
   @@index([tenantId, isActive])
 }
 
 model PayStructureComponent {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  payStructureId    String
-  payStructure      PayStructure @relation(fields: [payStructureId], references: [id])
+  payStructureId String
+  payStructure   PayStructure @relation(fields: [payStructureId], references: [id])
 
-  label             String
-  type              PayStructureCompType
-  valueType         PayStructureValueType
-  value             Float // if percentage, value is % of basic, if flat, it's fixed amount
-  isTaxable         Boolean  @default(false)
-  attachmentRequired Boolean  @default(false)
+  label              String
+  type               PayStructureCompType
+  valueType          PayStructureValueType
+  value              Float // if percentage, value is % of basic, if flat, it's fixed amount
+  isTaxable          Boolean               @default(false)
+  attachmentRequired Boolean               @default(false)
 
-
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Payroll {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  tenantId          String
-  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
 
-  payStructureId    String
-  payStructure      PayStructure @relation(fields: [payStructureId], references: [id])
+  payStructureId String
+  payStructure   PayStructure @relation(fields: [payStructureId], references: [id])
 
-  userId            String
-  user              User     @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  month             Int // 1-12
-  year              Int
+  month Int // 1-12
+  year  Int
 
-  baseSalary        Float
-  grossSalary       Float
-  totalEarnings     Float @default(0)
-  totalDeductions   Float @default(0)
-  totalAllowances   Float @default(0)
-  totalBonus        Float @default(0)
-  totalTax          Float @default(0)
-  netSalary         Float
+  baseSalary      Float
+  grossSalary     Float
+  totalEarnings   Float @default(0)
+  totalDeductions Float @default(0)
+  totalAllowances Float @default(0)
+  totalBonus      Float @default(0)
+  totalTax        Float @default(0)
+  netSalary       Float
 
-  presentDays       Float @default(0)
-  absentDays        Float @default(0)
-  lateDays          Float @default(0)
-  halfDays          Float @default(0)
-  payableDays       Float @default(0)
-  paidLeaves        Float @default(0)
-  unpaidLeaves      Float @default(0)
+  presentDays  Float @default(0)
+  absentDays   Float @default(0)
+  lateDays     Float @default(0)
+  halfDays     Float @default(0)
+  payableDays  Float @default(0)
+  paidLeaves   Float @default(0)
+  unpaidLeaves Float @default(0)
 
-  status            PayrollStatus @default(DRAFT)
-  processedAt       DateTime?
-  paidAt            DateTime?
+  status      PayrollStatus @default(DRAFT)
+  processedAt DateTime?
+  paidAt      DateTime?
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  items             PayrollItem[]
-  payslip           Payslip?
+  items   PayrollItem[]
+  payslip Payslip?
 
   @@unique([tenantId, userId, month, year])
   @@index([tenantId, userId, month, year])
 }
 
 model PayrollItem {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  payrollId         String
-  payroll           Payroll   @relation(fields: [payrollId], references: [id])
+  payrollId String
+  payroll   Payroll @relation(fields: [payrollId], references: [id])
 
-  label             String
-  type              PayrollItemType
-  amount            Float
-  description       String?
-  attachmentUrl     String?
+  label         String
+  type          PayrollItemType
+  amount        Float
+  description   String?
+  attachmentUrl String?
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Payslip {
-  id                String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  payrollId         String   @unique
-  payroll           Payroll   @relation(fields: [payrollId], references: [id])
+  payrollId String  @unique
+  payroll   Payroll @relation(fields: [payrollId], references: [id])
 
-  fileUrl           String?    // URL to the generated payslip PDF
-  generatedAt       DateTime?
+  fileUrl     String? // URL to the generated payslip PDF
+  generatedAt DateTime?
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

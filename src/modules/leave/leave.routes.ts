@@ -1,65 +1,78 @@
-import { Router } from 'express';
-import * as LeaveController from './leave.controller';
-import { auth, checkTenantApproval } from '../../core/middleware/auth';
-import { createFileUpload } from '../../core/service/multer.service';
+import { Router } from "express";
+import * as LeaveController from "./leave.controller";
+import { auth, checkTenantApproval } from "../../core/middleware/auth";
+import { createFileUpload } from "../../core/service/multer.service";
 
 const router = Router();
-router.use(auth, checkTenantApproval)
+
+router.use(auth, checkTenantApproval);
 
 const upload = createFileUpload({
-    maxSize: 12, // 12MB
-    allowedTypes: [ 'image/jpeg', 'image/jpg', 'application/pdf', 'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    ]
-})
+  maxSize: 12,
+  allowedTypes: [
+    "image/jpeg",
+    "image/jpg",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ]
+});
 
-/* -------------- Upsert Leave Type ---------------- */
+/* -------------------------------------------------------------------------- */
+/*                                LEAVE TYPES                                  */
+/* -------------------------------------------------------------------------- */
+
+router.post("/type", LeaveController.upsertLeaveType);
+router.get("/type", LeaveController.getLeaveTypes);
+
+/* -------------------------------------------------------------------------- */
+/*                                LEAVE POLICY                                 */
+/* -------------------------------------------------------------------------- */
+
+router.post("/policy", LeaveController.upsertLeavePolicy);
+router.get("/policy", LeaveController.getLeavePolicies);
+
+/* -------------------------------------------------------------------------- */
+/*                              APPROVAL POLICY                                */
+/* -------------------------------------------------------------------------- */
+
+router.post("/approval-policy", LeaveController.upsertApprovalPolicy);
+router.get("/approval-policy", LeaveController.getApprovalPolicies);
+
+/* -------------------------------------------------------------------------- */
+/*                             HOLIDAY CALENDAR                                */
+/* -------------------------------------------------------------------------- */
+
+router.post("/holiday-calendar", LeaveController.createHolidayCalendar);
+router.get("/holiday-calendars", LeaveController.getHolidaysCalendars);
+router.get("/holiday-calendar/active", LeaveController.getActiveHolidayCalendar);
+
+router.post("/holiday", LeaveController.createHoliday);
+
+/* -------------------------------------------------------------------------- */
+/*                               WORK WEEK                                     */
+/* -------------------------------------------------------------------------- */
+
+router.put("/work-week", LeaveController.updateWorkWeek);
+router.get("/work-week", LeaveController.getWorkWeek);
+
+/* -------------------------------------------------------------------------- */
+/*                               LEAVE FLOW                                    */
+/* -------------------------------------------------------------------------- */
+
 router.post(
-    '/type', 
-    LeaveController.upsertLeaveType
+  "/apply",
+  upload.array("attachments", 5),
+  LeaveController.applyLeave
 );
 
-/* -------------- Get Leave Types ---------------- */
-router.get(
-    '/type', 
-    LeaveController.getLeaveTypes
-);
+router.get("/balance/me", LeaveController.getMyLeaveBalance);
 
-/* -------------- Apply Leave ---------------- */
-router.post(
-    '/apply',
-    upload.array('attachments', 5), // Allow up to 5 attachments
-    LeaveController.applyLeave
-);
+router.get("/requests", LeaveController.getLeaveRequests);
+router.get("/requests/:userId", LeaveController.getLeaveRequests);
 
-/* -------------- Cancel Leave Request ---------------- */
-router.post(
-    '/cancel/:requestId', 
-    LeaveController.cancelLeaveRequests
-);
-
-/* -------------- Get Leave Requests ---------------- */
-router.get(
-    '/requests', 
-    LeaveController.getLeaveRequests
-);
-
-/* -------------- Get Leave Requests for a Specific User ---------------- */
-router.get(
-    '/requests/:userId', 
-    LeaveController.getLeaveRequests
-);
-
-/* -------------- Approve Leave Request ---------------- */
-router.post(
-    '/approve/:requestId', 
-    LeaveController.approveLeaveRequests
-);
-
-/* -------------- Reject Leave Request ---------------- */
-router.post(
-    '/reject/:requestId', 
-    LeaveController.rejectLeaveRequests
-);
+router.post("/cancel/:requestId", LeaveController.cancelLeaveRequests);
+router.post("/approve/:requestId", LeaveController.approveLeaveRequests);
+router.post("/reject/:requestId", LeaveController.rejectLeaveRequests);
 
 export default router;
