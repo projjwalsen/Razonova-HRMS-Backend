@@ -5,12 +5,18 @@ import { createFileUpload } from "../../core/service/multer.service";
 import RoleRoute from "../access-control/role.routes"
 import UserRoute from "../users/user.routes";
 import ReportingRoute from "../reporting/reporting.routes";
+import AttendRoute from "../attendence/attend.routes";
+import LeaveRoute from "../leave/leave.routes";
+import PayrollRoute from "../payroll/payroll.routes"
 
 const router = Router();
 
 router.use("/role", RoleRoute);
 router.use("/reporting", ReportingRoute);
 router.use("/users", UserRoute);
+router.use("/attendance", AttendRoute);
+router.use("/leave", LeaveRoute);
+router.use("/payroll", PayrollRoute);
 
 
 const upload = createFileUpload({
@@ -55,17 +61,17 @@ router.patch(
 //Department
 router.post(
     '/department/create', 
-    checkPermission("DEPARTMENT:CREATE"),
+    // checkPermission("DEPARTMENT:CREATE"),
     createDepartment
 );
 router.get(
     '/departments',
-    checkPermission("DEPARTMENT:READ"),
+    // checkPermission("DEPARTMENT:READ"),
     getAllDepartments
 );
 router.patch(
     '/department/update/:deptId', 
-    checkPermission("DEPARTMENT:UPDATE"),
+    // checkPermission("DEPARTMENT:UPDATE"),
     updateDepartment
 );
 router.delete(
@@ -76,17 +82,17 @@ router.delete(
 //Designation
 router.post(
     '/designation/create', 
-    checkPermission("DESIGNATION:CREATE"),
+    // checkPermission("DESIGNATION:CREATE"),
     createDesignation
 );
 router.get(
     '/designations', 
-    checkPermission("DESIGNATION:READ"),
+    // checkPermission("DESIGNATION:READ"),
     getDesignations
 );
 router.patch(
     '/designation/update/:desigId', 
-    checkPermission("DESIGNATION:UPDATE"),
+    // checkPermission("DESIGNATION:UPDATE"),
     updateDesignation
 );
 router.delete(

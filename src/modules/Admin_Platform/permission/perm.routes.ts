@@ -9,7 +9,7 @@ router.use(auth);
 router.post(
     "/create", 
     isPlatformAdmin,
-    checkPermission("PERMISSION:CREATE"),
+    // checkPermission("PERMISSION:CREATE"),
     permController.createPermission
 );
 router.get(
@@ -18,7 +18,7 @@ router.get(
 );
 router.put(
     "/update/:permId", 
-    checkPermission("PERMISSION:UPDATE"),
+    // checkPermission("PERMISSION:UPDATE"),
     isPlatformAdmin,
     permController.updatePermission
 );
