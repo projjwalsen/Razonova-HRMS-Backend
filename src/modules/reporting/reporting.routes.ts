@@ -8,19 +8,19 @@ router.use(auth, checkTenantApproval);
 
 router.patch(
     "/user/assign-manager", 
-    checkPermission("REPORTING:MANAGER_UPDATE"),
+    // checkPermission("REPORTING:MANAGER_UPDATE"),
     ReportingController.assignReportingManager
 )
 
 router.get(
     "/user/:userId/hierarchy", 
-    checkPermission("REPORTING:READ"),
+    // checkPermission("REPORTING:READ"),
     ReportingController.getReportingHierarchy
 )
 
 router.get(
     "/user/reportees", 
-    checkPermission("REPORTING:READ"),
+    // checkPermission("REPORTING:READ"),
     ReportingController.getReportees
 )
 
