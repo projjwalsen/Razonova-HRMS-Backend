@@ -2,6 +2,7 @@ import { EmploymentType, LeaveAccrualFrequency, LeaveApproverType, LeaveCountMod
 import { prisma } from "../../config/db/prisma";
 import { getDayDiffInclusiveTZ, getEndOfDay, getStartOfDay, getTenantTimezone } from "../utils/util";
 import Holidays from "date-holidays";
+import { AttendService } from "../attendence/attend.service";
 
 class AppError extends Error {
     statusCode: number;
@@ -1161,6 +1162,12 @@ export class LeaveService {
                     currentApprovalLevel: 0
                 }
             });
+
+            await AttendService.syncAttendanceForApprovedLeave(
+                tenantId,
+                leaveRequest.userId,
+                leaveRequest.id
+            )
 
             if(leaveRequest.leavePolicyRule?.isPaid) {
                 const balance = await tx.leaveBalance.findFirst({
