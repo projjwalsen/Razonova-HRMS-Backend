@@ -61,17 +61,17 @@ router.patch(
 //Department
 router.post(
     '/department/create', 
-    checkPermission("DEPARTMENT:CREATE"),
+    // checkPermission("DEPARTMENT:CREATE"),
     createDepartment
 );
 router.get(
     '/departments',
-    checkPermission("DEPARTMENT:READ"),
+    // checkPermission("DEPARTMENT:READ"),
     getAllDepartments
 );
 router.patch(
     '/department/update/:deptId', 
-    checkPermission("DEPARTMENT:UPDATE"),
+    // checkPermission("DEPARTMENT:UPDATE"),
     updateDepartment
 );
 router.delete(
@@ -82,17 +82,17 @@ router.delete(
 //Designation
 router.post(
     '/designation/create', 
-    checkPermission("DESIGNATION:CREATE"),
+    // checkPermission("DESIGNATION:CREATE"),
     createDesignation
 );
 router.get(
     '/designations', 
-    checkPermission("DESIGNATION:READ"),
+    // checkPermission("DESIGNATION:READ"),
     getDesignations
 );
 router.patch(
     '/designation/update/:desigId', 
-    checkPermission("DESIGNATION:UPDATE"),
+    // checkPermission("DESIGNATION:UPDATE"),
     updateDesignation
 );
 router.delete(

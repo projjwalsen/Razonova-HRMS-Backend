@@ -6,6 +6,7 @@ import crypto from "crypto";
 import { fillTemplate } from "../utils/util";
 import { ONBOARDING_TEMPLATE } from "../utils/mail.template";
 import { sendMail } from "../../core/service/mail.service";
+import { EmploymentType } from "@prisma/client";
 
 /** Will return all the active users for the current tenant */
 /**
@@ -289,8 +290,12 @@ export const getUserDetails = async (req: Request, res: Response) => {
  *               managerId: { type: string }
  *               isActive: { type: boolean }
  *               employeeCode: { type: string }
+ *               employmentType:
+ *                 type: string
+ *                 enum: [FULL_TIME, TRAINEE, INTERN, CONTRACT, OTHER]
  *               joiningDate: { type: string, format: date }
- *               preferredSalary: { type: number }
+ *               probationMonths: { type: number }
+ *               salary: { type: number }
  *               dateOfBirth: { type: string, format: date }
  *               addressLine1: { type: string }
  *               addressLine2: { type: string }
@@ -301,6 +306,8 @@ export const getUserDetails = async (req: Request, res: Response) => {
  *     responses:
  *       200:
  *         description: Employee updated successfully
+ *       400:
+ *         description: Invalid employment type
  *       403:
  *         description: Forbidden - cannot update employee from another tenant
  *       404:
@@ -312,6 +319,7 @@ export const updateUser = async (req: Request, res: Response) => {
     try {
         const actor = (req as any).user;
         const { userId } = (req as any).params;
+
         const {
             name,
             phone,
@@ -320,8 +328,10 @@ export const updateUser = async (req: Request, res: Response) => {
             managerId,
             isActive,
             employeeCode,
+            employmentType,
             joiningDate,
-            preferredSalary,
+            probationMonths,
+            salary,
             dateOfBirth,
             addressLine1,
             addressLine2,
@@ -339,69 +349,95 @@ export const updateUser = async (req: Request, res: Response) => {
         });
 
         if (!targetUser) {
-        return res.status(404).json({
-            status: false,
-            message: "Employee not found"
-        });
+            return res.status(404).json({
+                status: false,
+                message: "Employee not found"
+            });
         }
 
         if (targetUser.tenantId !== actor.tenantId) {
-        return res.status(403).json({
-            status: false,
-            message: "You cannot update employee from another tenant"
-        });
+            return res.status(403).json({
+                status: false,
+                message: "You cannot update employee from another tenant"
+            });
+        }
+
+        if (
+            employmentType !== undefined &&
+            !Object.values(EmploymentType).includes(employmentType as EmploymentType)
+        ) {
+            return res.status(400).json({
+                status: false,
+                message: "Invalid employment type"
+            });
         }
 
         const result = await prisma.$transaction(async (tx) => {
-        const updatedUser = await tx.user.update({
-            where: { id: userId },
-            data: {
-            name: name ?? undefined,
-            phone: phone ?? undefined,
-            departmentId: departmentId ?? undefined,
-            designationId: designationId ?? undefined,
-            managerId: managerId ?? undefined,
-            isActive: typeof isActive === "boolean" ? isActive : undefined
-            }
-        });
+            const updatedUser = await tx.user.update({
+                where: { id: userId },
+                data: {
+                    name: name ?? undefined,
+                    phone: phone ?? undefined,
+                    departmentId: departmentId ?? undefined,
+                    designationId: designationId ?? undefined,
+                    managerId: managerId ?? undefined,
+                    isActive: typeof isActive === "boolean" ? isActive : undefined
+                }
+            });
 
-        const updatedProfile = await tx.employeeProfile.upsert({
-            where: { userId },
-            update: {
-            employeeCode: employeeCode ?? undefined,
-            joiningDate: joiningDate ? new Date(joiningDate) : undefined,
-            salary: preferredSalary !== undefined ? Number(preferredSalary) : undefined,
-            dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-            addressLine1: addressLine1 ?? undefined,
-            addressLine2: addressLine2 ?? undefined,
-            city: city ?? undefined,
-            state: state ?? undefined,
-            country: country ?? undefined,
-            pinCode: pinCode ?? undefined
-            },
-            create: {
-            userId,
-            employeeCode: employeeCode ?? null,
-            joiningDate: joiningDate ? new Date(joiningDate) : null,
-            salary: preferredSalary !== undefined ? Number(preferredSalary) : null,
-            dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
-            addressLine1: addressLine1 ?? null,
-            addressLine2: addressLine2 ?? null,
-            city: city ?? null,
-            state: state ?? null,
-            country: country ?? null,
-            pinCode: pinCode ?? null
-            }
-        });
+            const updatedProfile = await tx.employeeProfile.upsert({
+                where: { userId },
+                update: {
+                    employeeCode: employeeCode ?? undefined,
+                    employmentType: employmentType ?? undefined,
+                    joiningDate: joiningDate ? new Date(joiningDate) : undefined,
+                    probationMonths:
+                        probationMonths !== undefined && probationMonths !== null
+                            ? Number(probationMonths)
+                            : undefined,
+                    salary:
+                        salary !== undefined && salary !== null
+                            ? Number(salary)
+                            : undefined,
+                    dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+                    addressLine1: addressLine1 ?? undefined,
+                    addressLine2: addressLine2 ?? undefined,
+                    city: city ?? undefined,
+                    state: state ?? undefined,
+                    country: country ?? undefined,
+                    pinCode: pinCode ?? undefined
+                },
+                create: {
+                    userId,
+                    employeeCode: employeeCode ?? null,
+                    employmentType: employmentType ?? null,
+                    joiningDate: joiningDate ? new Date(joiningDate) : null,
+                    probationMonths:
+                        probationMonths !== undefined && probationMonths !== null
+                            ? Number(probationMonths)
+                            : null,
+                    salary:
+                        salary !== undefined && salary !== null
+                            ? Number(salary)
+                            : null,
+                    dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+                    addressLine1: addressLine1 ?? null,
+                    addressLine2: addressLine2 ?? null,
+                    city: city ?? null,
+                    state: state ?? null,
+                    country: country ?? null,
+                    pinCode: pinCode ?? null
+                }
+            });
 
-        return { updatedUser, updatedProfile };
+            return { updatedUser, updatedProfile };
         });
 
         return res.status(200).json({
-        status: true,
-        message: "Employee updated successfully",
-        data: result
-    });
+            status: true,
+            message: "Employee updated successfully",
+            data: result
+        });
     } catch (error: any) {
         return res.status(500).json({
             status: false,
@@ -409,7 +445,7 @@ export const updateUser = async (req: Request, res: Response) => {
             error: error.message
         });
     }
-}
+};
 
 /**
  * @swagger
