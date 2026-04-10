@@ -67,6 +67,12 @@ router.post(
   LeaveController.applyLeave
 );
 
+router.post(
+  "/apply-on-behalf/:userId",
+  upload.array("attachments", 5),
+  LeaveController.applyLeaveOnBehalf
+)
+
 router.get("/balance/me", LeaveController.getMyLeaveBalance);
 
 router.get("/requests", LeaveController.getLeaveRequests);

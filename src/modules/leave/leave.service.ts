@@ -771,34 +771,105 @@ export class LeaveService {
         leaveTypeId: string | null,
         leavePolicyId?: string | null
     ) {
-        return prisma.leaveApprovalPolicy.findFirst({
+        // 1. Most specific: leavePolicy + leaveType + department + designation
+        let policy = await prisma.leaveApprovalPolicy.findFirst({
             where: {
                 tenantId,
                 isActive: true,
-                OR: [
-                    {
-                        leavePolicyId: leavePolicyId,
-                        leaveTypeId: leaveTypeId,
-                        departmentId: user?.departmentId ?? null,
-                        designationId: user?.designationId ?? null,
-                    },
-                    {
-                        leavePolicyId: leavePolicyId,
-                        leaveTypeId: leaveTypeId,
-                    },
-                    {
-                        leavePolicyId: leavePolicyId,
-                        leaveTypeId: null
-                    }
-                ]
+                leavePolicyId: leavePolicyId ?? null,
+                leaveTypeId: leaveTypeId ?? null,
+                departmentId: user?.departmentId ?? null,
+                designationId: user?.designationId ?? null
             },
             include: {
                 levels: {
-                    orderBy: { level: "asc" },
+                    orderBy: { level: "asc" }
                 }
             },
             orderBy: { createdAt: "desc" }
-        })
+        });
+
+        if (policy) return policy;
+
+        // 2. leavePolicy + leaveType + designation
+        policy = await prisma.leaveApprovalPolicy.findFirst({
+            where: {
+                tenantId,
+                isActive: true,
+                leavePolicyId: leavePolicyId ?? null,
+                leaveTypeId: leaveTypeId ?? null,
+                designationId: user?.designationId ?? null,
+                departmentId: null
+            },
+            include: {
+                levels: {
+                    orderBy: { level: "asc" }
+                }
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        if (policy) return policy;
+
+        // 3. leavePolicy + leaveType + department
+        policy = await prisma.leaveApprovalPolicy.findFirst({
+            where: {
+                tenantId,
+                isActive: true,
+                leavePolicyId: leavePolicyId ?? null,
+                leaveTypeId: leaveTypeId ?? null,
+                departmentId: user?.departmentId ?? null,
+                designationId: null
+            },
+            include: {
+                levels: {
+                    orderBy: { level: "asc" }
+                }
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        if (policy) return policy;
+
+        // 4. leavePolicy + leaveType
+        policy = await prisma.leaveApprovalPolicy.findFirst({
+            where: {
+                tenantId,
+                isActive: true,
+                leavePolicyId: leavePolicyId ?? null,
+                leaveTypeId: leaveTypeId ?? null,
+                departmentId: null,
+                designationId: null
+            },
+            include: {
+                levels: {
+                    orderBy: { level: "asc" }
+                }
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        if (policy) return policy;
+
+        // 5. leavePolicy only fallback
+        policy = await prisma.leaveApprovalPolicy.findFirst({
+            where: {
+                tenantId,
+                isActive: true,
+                leavePolicyId: leavePolicyId ?? null,
+                leaveTypeId: null,
+                departmentId: null,
+                designationId: null
+            },
+            include: {
+                levels: {
+                    orderBy: { level: "asc" }
+                }
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        return policy;
     }
     private static async resolveApproverIds(
         tx: Prisma.TransactionClient,
@@ -883,6 +954,82 @@ export class LeaveService {
         })
     }
 
+    static async runYearlyCarryForward(
+        tenantId: string,
+        fromYear: number,
+        toYear: number
+    ) {
+        //1 . fetch all leave balance of fromYear
+        const balances = await prisma.leaveBalance.findMany({
+            where: {
+                tenantId,
+                year: fromYear
+            },
+            include: {
+                leaveType: true,
+            }
+        });
+
+        //2. for each balance, check the policy rule if carry forward is allowed and calculate carry forward days
+        for(const bal of balances) {
+            const policyRule = await prisma.leavePolicyRule.findFirst({
+                where: {
+                    leaveTypeId: bal.leaveTypeId,
+                    leavePolicy: {
+                        tenantId,
+                        isActive: true
+                    }
+                }
+            });
+
+            if(!policyRule) continue;
+
+            let carryForwardDays = 0;
+
+            if(policyRule.carryForwardAllowed) {
+                carryForwardDays = Math.min(
+                    bal.remainingDays,
+                    policyRule.carryForwardLimit ?? bal.remainingDays
+                )
+            }
+
+            // next year allocation will be same as annual allocation defined in policy
+            const nextYearAllocation = policyRule.annualAllocation;
+
+            // 3. update or create leave balance for toYear with carry forward days and new allocation
+            await prisma.leaveBalance.upsert({
+                where: {
+                    tenantId_userId_leaveTypeId_year: {
+                        tenantId,
+                        userId: bal.userId,
+                        leaveTypeId: bal.leaveTypeId,
+                        year: toYear
+                    }
+                },
+                update: {
+                    allocatedDays: nextYearAllocation,
+                    carriedForwardDays: carryForwardDays,
+                    remainingDays: nextYearAllocation + carryForwardDays
+                },
+                create: {
+                    tenantId,
+                    userId: bal.userId,
+                    leaveTypeId: bal.leaveTypeId,
+                    year: toYear,
+                    allocatedDays: nextYearAllocation,
+                    takenDays: 0,
+                    carriedForwardDays: carryForwardDays,
+                    usedDays: 0,
+                    remainingDays: nextYearAllocation + carryForwardDays
+                }
+            })
+        }
+
+        return {
+            success: true,
+            message: `Carry forward process completed from year ${fromYear} to ${toYear}`
+        }
+    }
 
     static async applyLeave(tenantId: string, userId: string, payload: {
         leaveTypeId: string;
@@ -1137,7 +1284,7 @@ export class LeaveService {
         remarks?: string
     ){
         return prisma.$transaction(async (tx) => {
-            const leaveRequest = await prisma.leaveRequest.findUnique({
+            const leaveRequest = await prisma.leaveRequest.findFirst({
                 where: {
                     id: leaveRequestId,
                     tenantId
@@ -1165,12 +1312,13 @@ export class LeaveService {
                 throw new AppError("You have already acted on this leave request", 400);
             }
 
-            await tx.leaveRequest.update({
+            //updating approval row
+            await tx.leaveApproval.update({
                 where: { id: approval.id },
                 data: {
-                    status: "APPROVED",
-                    reason: remarks || null,
-                    approvedAt: new Date(),
+                    decision: "APPROVE",
+                    remarks: remarks || null,
+                    actedAt: new Date(),
                 }
             });
 

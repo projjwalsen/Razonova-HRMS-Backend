@@ -1,7 +1,49 @@
-/* - For initial MVP - cron + BackgroundJobs table in prisma
-    acts as a scheduler for background jobs, which can be used to run tasks at specific intervals or times.
-    It allows you to define and manage recurring tasks that need to be executed in the background, 
-    such as sending emails, cleaning up data, or performing maintenance tasks. 
-    The cron job will check the BackgroundJobs table for any scheduled tasks and execute them accordingly.
-*/
+import cron from 'node-cron';
+import { prisma } from '../../config/db/prisma';
+import { getTenantTimezone, getYearRangeForTimezone, isFirstDayOfYearInTimezone } from '../../modules/utils/util';
+import { LeaveService } from '../../modules/leave/leave.service';
 
+export function LeaveCarryForwardCron() {
+    cron.schedule(
+        "0 * * * *",
+        async() => {
+            console.log("Running Leave Carry Forward Cron Job...");
+
+            const tenants = await prisma.tenant.findMany({
+                where: {
+                    isActive: true
+                },
+                select: {
+                    id: true,
+                }
+            });
+
+            for(const tenant of tenants) {
+                try {
+                    const timezone = await getTenantTimezone(tenant.id);
+
+                    if(!isFirstDayOfYearInTimezone(timezone)) {
+                        continue;
+                    }
+                    const {
+                        fromYear,
+                        toYear
+                    } = getYearRangeForTimezone(timezone);
+
+                    await LeaveService.runYearlyCarryForward(
+                        tenant.id,
+                        fromYear,
+                        toYear
+                    );
+
+                    console.log(`Leave Carry Forward Cron Job executed successfully for tenant ${tenant.id} for year ${fromYear} to ${toYear}`);
+                } catch (error: any) {
+                    console.error(`Error occurred while running Leave Carry Forward Cron Job for tenant ${tenant.id}:`, error);
+                }
+            }
+        },
+        {
+            timezone: 'UTC'
+        }
+    )
+}
