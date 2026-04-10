@@ -45,6 +45,7 @@ router.get("/approval-policy", LeaveController.getApprovalPolicies);
 
 router.post("/holiday-calendar", LeaveController.createHolidayCalendar);
 router.get("/holiday-calendars", LeaveController.getHolidaysCalendars);
+router.delete("/holiday-calendar/:calendarId", LeaveController.deleteHolidayCalendar);
 router.get("/holiday-calendar/active", LeaveController.getActiveHolidayCalendar);
 
 router.post("/holiday", LeaveController.createHoliday);

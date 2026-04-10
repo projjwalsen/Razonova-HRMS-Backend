@@ -417,9 +417,25 @@ export class LeaveService {
             });
         }
 
+        const fullCalendar = await prisma.holidayCalendar.findUnique({
+            where: { 
+                id: calendar.id,
+                tenantId
+            },
+            include: {
+                holidays: {
+                    orderBy: { date: "asc" }
+                },
+                _count: {
+                    select: {
+                        holidays: true
+                    }
+                }
+            }
+        });
+
         return {
-            ...calendar,
-            year,
+            ...fullCalendar,
             importedSummary
         }
     }
@@ -489,6 +505,9 @@ export class LeaveService {
         return prisma.holidayCalendar.findMany({
             where: { tenantId },
             include: {
+                holidays: {
+                    orderBy: { date: "asc" }
+                },
                 _count: {
                     select: {
                         holidays: true
@@ -505,16 +524,62 @@ export class LeaveService {
     static async getActiveHolidayCalendar(tenantId: string) {
         return prisma.holidayCalendar.findFirst({
             where: {
-            tenantId,
-            isDefault: true,
-            isActive: true
+                tenantId,
+                isDefault: true,
+                isActive: true
             },
             include: {
-            holidays: {
-                orderBy: { date: "asc" }
-            }
+                holidays: {
+                    orderBy: { date: "asc" }
+                }
             }
         });
+    }
+
+    static async deleteHolidayCalendar(tenantId: string, calendarId: string) {
+        const calendar = await prisma.holidayCalendar.findFirst({
+            where: {
+                id: calendarId,
+                tenantId
+            }
+        });
+
+        if(!calendar) {
+            throw new Error("Holiday calendar not found");
+        }
+
+        return prisma.$transaction(async (tx) => {
+            //removing reference from leave policy rule 
+            await tx.leavePolicyRule.updateMany({
+                where: {
+                    regionHolidayCalenderId: calendarId
+                },
+                data: {
+                    regionHolidayCalenderId: null
+                }
+            });
+
+            //delete holiday inside this calendar
+            await tx.holiday.deleteMany(
+                {
+                    where: {
+                        holidayCalendarId: calendarId
+                    }
+                }
+            );
+
+            //delete calendar
+            await tx.holidayCalendar.delete({
+                where: {
+                    id: calendarId,
+                }
+            });
+
+            return {
+                success: true,
+                message: "Holiday calendar approved successfully",
+            }
+        })
     }
 
     static async updateWorkWeek(

@@ -740,6 +740,60 @@ export const getHolidaysCalendars = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * @swagger
+ * /leave/holiday-calendar/{holidayCalendarId}:
+ *   delete:
+ *     summary: Delete a holiday calendar
+ *     tags: [Leave]
+ *     parameters:
+ *       - in: path
+ *         name: holidayCalendarId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Holiday calendar deleted successfully
+ *       404:
+ *         description: Holiday calendar not found
+ *       500:
+ *         description: Failed to delete holiday calendar
+ */
+export const deleteHolidayCalendar = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const { calendarId } = (req as any).params;
+
+        if(!calendarId) {
+            return res.status(400).json({
+                status: false,
+                message: "Holiday calendar ID is required"
+            })
+        }
+
+        const result = await LeaveService.deleteHolidayCalendar(actor.tenantId, calendarId);
+        if(!result) {
+            return res.status(404).json({
+                status: false,
+                message: "Failed to delete holiday calendar"
+            })
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: "Holiday calendar deleted successfully"
+        })
+
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to delete holiday calendar",
+            error: error.message
+        });
+    }
+}
+
 /** ------------  USER POV ______________________ */
 export const getActiveHolidayCalendar = async (req: AuthRequest, res: Response) => {
   try {
