@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import { LeaveService } from "./leave.service";
 import { uploadToS3 } from "../../config/s3/s3.config";
 import { error } from "node:console";
+import { prisma } from "../../config/db/prisma";
 
 
 type AuthRequest = Request & {
@@ -434,6 +435,11 @@ export const upsertApprovalPolicy = async (req: AuthRequest, res: Response) => {
                 });
             }
 
+            if (["REPORTING_MANAGER", "DEPARTMENT_MANAGER", "COMPANY_ADMIN"].includes(level.approverType)) {
+                level.roleId = undefined;
+                level.userId = undefined;
+            }
+
             if (level.approverType === "ROLE" && !level.roleId) {
                 return res.status(400).json({
                 status: false,
@@ -740,6 +746,60 @@ export const getHolidaysCalendars = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * @swagger
+ * /leave/holiday-calendar/{calendarId}:
+ *   delete:
+ *     summary: Delete a holiday calendar
+ *     tags: [Leave]
+ *     parameters:
+ *       - in: path
+ *         name: holidayCalendarId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Holiday calendar deleted successfully
+ *       404:
+ *         description: Holiday calendar not found
+ *       500:
+ *         description: Failed to delete holiday calendar
+ */
+export const deleteHolidayCalendar = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const { calendarId } = (req as any).params;
+
+        if(!calendarId) {
+            return res.status(400).json({
+                status: false,
+                message: "Holiday calendar ID is required"
+            })
+        }
+
+        const result = await LeaveService.deleteHolidayCalendar(actor.tenantId, calendarId);
+        if(!result) {
+            return res.status(404).json({
+                status: false,
+                message: "Failed to delete holiday calendar"
+            })
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: "Holiday calendar deleted successfully"
+        })
+
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to delete holiday calendar",
+            error: error.message
+        });
+    }
+}
+
 /** ------------  USER POV ______________________ */
 export const getActiveHolidayCalendar = async (req: AuthRequest, res: Response) => {
   try {
@@ -946,6 +1006,137 @@ export const applyLeave = async (req: Request, res: Response) => {
             message: "Leave applied successfully",
             data: result
         })
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to apply for leave",
+            error: error.message
+        })
+    }
+}
+
+/**
+ * @swagger
+ * /leave/apply-on-behalf/{userId}:
+ *   post:
+ *     summary: Apply leave on behalf of another employee
+ *     tags: [Leave]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - leaveTypeId
+ *               - startDate
+ *               - endDate
+ *             properties:
+ *               leaveTypeId:
+ *                 type: string
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *               endDate:
+ *                 type: string
+ *                 format: date
+ *               reason:
+ *                 type: string
+ *               attachments:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *     responses:
+ *       200:
+ *         description: Leave applied on behalf successfully
+ *       403:
+ *         description: Not allowed to apply leave on behalf
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Failed to apply leave on behalf
+ */
+export const applyLeaveOnBehalf = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const { userId } = (req as any).params;
+        const { 
+            leaveTypeId,
+            startDate,
+            endDate,
+            reason,
+        } = req.body;
+
+        if(!userId) {
+            return res.status(400).json({
+                status: false,
+                message: "User ID is required"
+            })
+        }
+
+        if (!leaveTypeId || !startDate || !endDate) {
+            return res.status(400).json({
+                status: false,
+                message: "leaveTypeId, startDate and endDate are required"
+            });
+        }
+
+        const targetUser = await prisma.user.findFirst({
+            where: {
+                id: userId,
+                tenantId: actor.tenantId
+            }
+        });
+
+        if (!targetUser) {
+            return res.status(404).json({
+                status: false,
+                message: "Target user not found"
+            });
+        }
+
+        let attachmentUrls : string[] = [];
+        const files = (req as any).files || [];
+
+        if(files && files.length > 0) {
+            for(const file of files) {
+                const url = await uploadToS3(
+                    file,
+                    actor.tenantId,
+                    `leave-attachments/${userId}/${Date.now()}-${file.originalname}`
+                );
+                attachmentUrls.push(url);
+            }
+        }
+
+        const result = await LeaveService.applyLeave(actor.tenantId, userId, {
+            leaveTypeId,
+            startDate: startDate,
+            endDate: endDate,
+            reason,
+            attachmentUrls: attachmentUrls.length > 0 ? attachmentUrls : undefined
+        });
+
+        if(!result) {
+            return res.status(404).json({
+                status: false,
+                message: "Failed to apply for leave"
+            })
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: "Leave applied successfully",
+            data: result
+        });
+
     } catch (error: any) {
         return res.status(500).json({
             status: false,

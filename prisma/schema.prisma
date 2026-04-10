@@ -337,6 +337,9 @@ enum AttendanceStatus {
   ABSENT
   LATE
   HALF_DAY
+  ON_LEAVE
+  HOLIDAY
+  WEEK_OFF
 }
 
 model AttendanceConfig {
@@ -351,6 +354,8 @@ model AttendanceConfig {
 
   halfDayMinutes Int @default(240) // minutes threshold for half-day - 4 hours
   fullDayMinutes Int @default(480) // minutes threshold for full-day - 8 hours
+
+  workingDays    Json // e.g., ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -373,12 +378,21 @@ model Attendance {
   workedMinutes Int              @default(0)
   remarks       String?
 
+  leaveRequestId String?
+  leaveRequest   LeaveRequest? @relation(fields: [leaveRequestId], references: [id])
+
+  isOnApprovedLeave Boolean @default(false)
+  isPaidLeave     Boolean @default(false)
+  isHoliday      Boolean @default(false)
+  isWeekOff     Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([userId, date])
   @@index([userId, date])
   @@index([tenantId, date])
+  @@index([tenantId, status, date])
 }
 
 enum EmploymentType {
@@ -636,6 +650,7 @@ model LeaveRequest {
   updatedAt DateTime @updatedAt
 
   approvals LeaveApproval[]
+  attendances Attendance[]
 
   @@index([tenantId, userId, status])
   @@index([tenantId, startDate, endDate])
