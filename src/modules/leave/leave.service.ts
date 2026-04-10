@@ -676,7 +676,7 @@ export class LeaveService {
         (currentDate.getMonth() - joiningDate.getMonth());
 
         if(accrualFrequency === "MONTHLY") {
-            const accrued = Math.floor(months) * accrualAmount;
+            const accrued = (Math.floor(months) + 1) * accrualAmount;
             return Math.min(annualAllocation, accrued);
         }
         if(accrualFrequency === "QUARTERLY") {
