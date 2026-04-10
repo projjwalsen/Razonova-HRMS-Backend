@@ -741,10 +741,7 @@ export class LeaveService {
         where: {
             tenantId,
             isActive: true,
-            OR: [
-            { employmentType },
-            { employmentType: null }
-            ]
+            employmentType
         },
         include: {
             rules: {
@@ -759,8 +756,30 @@ export class LeaveService {
         orderBy: { createdAt: "desc" }
         });
 
+        // Fallback to a general (null employmentType) policy if no type-specific one exists
         if (!leavePolicy) {
-        throw new AppError("No active leave policy found");
+            const fallbackPolicy = await prisma.leavePolicy.findFirst({
+            where: {
+                tenantId,
+                isActive: true,
+                employmentType: null
+            },
+            include: {
+                rules: {
+                include: {
+                    leaveType: true,
+                    holidayCalendar: {
+                    include: { holidays: true }
+                    }
+                }
+                }
+            },
+            orderBy: { createdAt: "desc" }
+            });
+            if (!fallbackPolicy) {
+                throw new AppError("No active leave policy found");
+            }
+            return { user, leavePolicy: fallbackPolicy };
         }
 
         return { user, leavePolicy };
@@ -943,7 +962,94 @@ export class LeaveService {
         const now = getStartOfDay(new Date(), timezone);
         const year = now.getFullYear();
 
-        let balances = await prisma.leaveBalance.findMany({
+        const { user, leavePolicy } = await this.resolveApplicablePolicy(tenantId, userId);
+        const onProbation = this.isOnProbation(
+            user.employeeProfile?.joiningDate,
+            leavePolicy.probationMonths
+        );
+
+        const existingBalances = await prisma.leaveBalance.findMany({
+            where: {
+                tenantId,
+                userId,
+                year
+            },
+            include: {
+                leaveType: true
+            }
+        });
+
+        const existingLeaveTypeIds = new Set(
+            existingBalances.map((balance) => balance.leaveTypeId)
+        );
+
+        const ruleMap = new Map(
+            leavePolicy.rules.map(rule => [rule.leaveTypeId, rule])
+        );
+
+        for (const balance of existingBalances) {
+            const rule = ruleMap.get(balance.leaveTypeId);
+            if (!rule) continue; // leave type no longer in policy — skip
+            if (onProbation && !rule.allowDuringProbation) continue;
+
+            // Recalculate correct allocation based on current policy rule
+            const correctAllocatedDays = this.calculateAccruedAllocation(
+                rule.annualAllocation,
+                rule.accrualFrequency ?? "YEARLY",
+                rule.accrualAmount,
+                user.employeeProfile?.joiningDate ?? null,
+                now
+            );
+
+            // Update only if the allocatedDays are stale (from an old/missing policy)
+            if (balance.allocatedDays !== correctAllocatedDays) {
+                const newRemaining = correctAllocatedDays
+                    + balance.carriedForwardDays
+                    - balance.usedDays;
+
+                await prisma.leaveBalance.update({
+                    where: { id: balance.id },
+                    data: {
+                        allocatedDays: correctAllocatedDays,
+                        remainingDays: Math.max(0, newRemaining)
+                    }
+                });
+            }
+        }
+
+        // Create balances for leave types in policy that don't have a record yet
+        for (const rule of leavePolicy.rules) {
+            if (onProbation && !rule.allowDuringProbation) {
+                continue;
+            }
+            if (existingLeaveTypeIds.has(rule.leaveTypeId)) {
+                continue;
+            }
+
+            const allocatedDays = this.calculateAccruedAllocation(
+                rule.annualAllocation,
+                rule.accrualFrequency ?? "YEARLY",
+                rule.accrualAmount,
+                user.employeeProfile?.joiningDate ?? null,
+                now
+            );
+
+            await prisma.leaveBalance.create({
+                data: {
+                    tenantId,
+                    userId,
+                    leaveTypeId: rule.leaveTypeId,
+                    year,
+                    allocatedDays,
+                    takenDays: 0,
+                    carriedForwardDays: 0,
+                    usedDays: 0,
+                    remainingDays: allocatedDays
+                }
+            });
+        }
+
+        return prisma.leaveBalance.findMany({
             where: {
                 tenantId,
                 userId,
@@ -956,72 +1062,6 @@ export class LeaveService {
                 { createdAt: "desc" }
             ]
         });
-
-        const { user, leavePolicy } = await this.resolveApplicablePolicy(tenantId, userId);
-        const onProbation = this.isOnProbation(
-            user.employeeProfile?.joiningDate,
-            leavePolicy.probationMonths
-        );
-        const existingBalances = await prisma.leaveBalance.findMany({
-        where: {
-            tenantId,
-            userId,
-            year
-        },
-        include: {
-            leaveType: true
-        }
-    });
-
-    const existingLeaveTypeIds = new Set(
-        existingBalances.map((balance) => balance.leaveTypeId)
-    );
-
-    for (const rule of leavePolicy.rules) {
-        if (onProbation && !rule.allowDuringProbation) {
-            continue;
-        }
-
-        if (existingLeaveTypeIds.has(rule.leaveTypeId)) {
-            continue;
-        }
-
-        const allocatedDays = this.calculateAccruedAllocation(
-            rule.annualAllocation,
-            rule.accrualFrequency ?? "YEARLY",
-            rule.accrualAmount,
-            user.employeeProfile?.joiningDate ?? null,
-            now
-        );
-
-        await prisma.leaveBalance.create({
-            data: {
-                tenantId,
-                userId,
-                leaveTypeId: rule.leaveTypeId,
-                year,
-                allocatedDays,
-                takenDays: 0,
-                carriedForwardDays: 0,
-                usedDays: 0,
-                remainingDays: allocatedDays
-            }
-        });
-    }
-
-    return prisma.leaveBalance.findMany({
-        where: {
-            tenantId,
-            userId,
-            year
-        },
-        include: {
-            leaveType: true
-        },
-        orderBy: [
-            { createdAt: "desc" }
-        ]
-    });
     }
 
     static async runYearlyCarryForward(
