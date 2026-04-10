@@ -1,6 +1,36 @@
 import { Request, Response } from "express";
 import { AttendService } from "./attend.service";
 
+const handleError = (res: Response, error: any, fallbackMessage: string) => {
+  const message = error?.message || fallbackMessage;
+
+  if (
+    message.includes("Already checked in") ||
+    message.includes("Already checked out")
+  ) {
+    return res.status(409).json({ status: false, message });
+  }
+
+  if (
+    message.includes("Cannot check in") ||
+    message.includes("Cannot check out") ||
+    message.includes("Check-in record not found")
+  ) {
+    return res.status(400).json({ status: false, message });
+  }
+
+  if (message.includes("Attendance configuration not found")) {
+    return res.status(404).json({ status: false, message });
+  }
+
+  return res.status(500).json({
+    status: false,
+    message: fallbackMessage,
+    error: message
+  });
+};
+
+
 /** ---------- Set Attendance Configuration ---------------------- */
 /**
  * @swagger
@@ -8,8 +38,10 @@ import { AttendService } from "./attend.service";
  *   post:
  *     tags:
  *       - attendance
- *     summary: Set or update attendance configuration for a tenant
- *     description: Set or update check-in/out times, grace minutes, half/full day minutes for a tenant.
+ *     summary: Create or update tenant attendance configuration
+ *     description: Create or update the attendance policy for the current tenant, including check-in/check-out timings, grace period, half-day/full-day thresholds, and working days.
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -20,18 +52,137 @@ import { AttendService } from "./attend.service";
  *               - checkInTime
  *               - checkOutTime
  *             properties:
- *               checkInTime: { type: string, example: "09:00" }
- *               checkOutTime: { type: string, example: "18:00" }
- *               graceMinutes: { type: integer, example: 15 }
- *               halfDayMinutes: { type: integer, example: 240 }
- *               fullDayMinutes: { type: integer, example: 480 }
+ *               checkInTime:
+ *                 type: string
+ *                 example: "09:00"
+ *                 description: Scheduled tenant check-in time in HH:mm format.
+ *               checkOutTime:
+ *                 type: string
+ *                 example: "18:00"
+ *                 description: Scheduled tenant check-out time in HH:mm format.
+ *               graceMinutes:
+ *                 type: integer
+ *                 example: 15
+ *                 minimum: 0
+ *                 description: Number of grace minutes allowed after check-in time before marking late attendance.
+ *               halfDayMinutes:
+ *                 type: integer
+ *                 example: 240
+ *                 minimum: 1
+ *                 description: Minimum worked minutes required to mark the day as HALF_DAY.
+ *               fullDayMinutes:
+ *                 type: integer
+ *                 example: 480
+ *                 minimum: 1
+ *                 description: Minimum worked minutes required to mark the day as PRESENT or LATE instead of HALF_DAY.
+ *               workingDays:
+ *                 type: array
+ *                 description: Working weekdays for the tenant. Any day outside this list may be treated as WEEK_OFF.
+ *                 items:
+ *                   type: string
+ *                   enum: [MON, TUE, WED, THU, FRI, SAT, SUN]
+ *                 example: [MON, TUE, WED, THU, FRI]
+ *           examples:
+ *             defaultConfig:
+ *               summary: Standard office timing
+ *               value:
+ *                 checkInTime: "09:00"
+ *                 checkOutTime: "18:00"
+ *                 graceMinutes: 15
+ *                 halfDayMinutes: 240
+ *                 fullDayMinutes: 480
+ *                 workingDays: [MON, TUE, WED, THU, FRI]
+ *             sixDayWeek:
+ *               summary: Six day working week
+ *               value:
+ *                 checkInTime: "10:00"
+ *                 checkOutTime: "19:00"
+ *                 graceMinutes: 10
+ *                 halfDayMinutes: 240
+ *                 fullDayMinutes: 480
+ *                 workingDays: [MON, TUE, WED, THU, FRI, SAT]
  *     responses:
  *       200:
  *         description: Attendance configuration upserted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Attendance configuration upserted successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "3f5e9c2b-4f4e-4e1f-8c8d-1f2d3a4b5c6d"
+ *                     tenantId:
+ *                       type: string
+ *                       example: "9db0be9c-7dc8-4d10-a61f-44edc0d0b111"
+ *                     checkInTime:
+ *                       type: string
+ *                       example: "09:00"
+ *                     checkOutTime:
+ *                       type: string
+ *                       example: "18:00"
+ *                     graceMinutes:
+ *                       type: integer
+ *                       example: 15
+ *                     halfDayMinutes:
+ *                       type: integer
+ *                       example: 240
+ *                     fullDayMinutes:
+ *                       type: integer
+ *                       example: 480
+ *                     workingDays:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                         enum: [MON, TUE, WED, THU, FRI, SAT, SUN]
+ *                       example: [MON, TUE, WED, THU, FRI]
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
  *       400:
  *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: halfDayMinutes must be less than fullDayMinutes
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Attendance configuration context or tenant not found
  *       500:
  *         description: Failed to upsert attendance configuration
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: Failed to upsert attendance configuration
+ *                 error:
+ *                   type: string
  */
 export const upsertAttendanceConfig = async (req: Request, res: Response) => {
     try {
@@ -41,7 +192,8 @@ export const upsertAttendanceConfig = async (req: Request, res: Response) => {
             checkOutTime,
             graceMinutes,
             halfDayMinutes,
-            fullDayMinutes
+            fullDayMinutes,
+            workingDays
         } = req.body;
 
         if (!checkInTime || !checkOutTime) {
@@ -84,7 +236,8 @@ export const upsertAttendanceConfig = async (req: Request, res: Response) => {
             checkOutTime,
             graceMinutes: graceMinutes !== undefined ? Number(graceMinutes) : undefined,
             halfDayMinutes: halfDayMinutes !== undefined ? Number(halfDayMinutes) : undefined,
-            fullDayMinutes: fullDayMinutes !== undefined ? Number(fullDayMinutes) : undefined
+            fullDayMinutes: fullDayMinutes !== undefined ? Number(fullDayMinutes) : undefined,
+            workingDays: Array.isArray(workingDays) ? workingDays : undefined
         });
 
         if(!result){
@@ -99,11 +252,7 @@ export const upsertAttendanceConfig = async (req: Request, res: Response) => {
             data: result
         });
     } catch (error: any) {
-        return res.status(500).json({
-            status: false,
-            message: "Failed to upsert attendance configuration",
-            error: error.message
-        })
+        return handleError(res, error, "Failed to upsert attendance configuration");
     }
 }
 
@@ -139,11 +288,7 @@ export const getAttendanceConfig = async (req: Request, res: Response) => {
             data: result
         });
     } catch (error: any) {
-        return res.status(500).json({
-            status: false,
-            message: "Failed to get attendance configuration",
-            error: error.message
-        })
+        return handleError(res, error, "Failed to get attendance configuration");
     }
 }
 
@@ -177,11 +322,7 @@ export const checkIn = async (req: Request, res: Response) => {
             data: result
         });
     } catch (error: any) {
-        return res.status(500).json({
-            status: false,
-            message: "Failed to check in",
-            error: error.message
-        })
+        return handleError(res, error, "Failed to check in");
     }
 }
 
@@ -215,11 +356,7 @@ export const checkOut = async (req: Request, res: Response) => {
             data: result
         });
     } catch (error: any) {
-        return res.status(500).json({
-            status: false,
-            message: "Failed to check out",
-            error: error.message
-        })
+        return handleError(res, error, "Failed to check out");
     }
 }
 
@@ -267,13 +404,53 @@ export const getTodaysAttendance = async (req: Request, res: Response) => {
             data: result
         });
     } catch (error: any) {
-        return res.status(500).json({
-            status: false,
-            message: "Failed to get today's attendance",
-            error: error.message
-        })
+        return handleError(res, error, "Failed to get today's attendance");
     }
 }
+
+/**
+ * @swagger
+ * /attendance/history:
+ *   get:
+ *     tags:
+ *       - attendance
+ *     summary: Get attendance history for all users
+ *     description: Retrieve attendance history for all users in the tenant with optional date range and status filtering.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date
+ *           example: "2026-04-01"
+ *         description: Start date for attendance history filter.
+ *       - in: query
+ *         name: endDate
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date
+ *           example: "2026-04-30"
+ *         description: End date for attendance history filter.
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [PRESENT, ABSENT, LATE, HALF_DAY, ON_LEAVE, HOLIDAY, WEEK_OFF]
+ *           example: PRESENT
+ *         description: Filter attendance records by status.
+ *     responses:
+ *       200:
+ *         description: Attendance history for all users fetched successfully
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Failed to get attendance history
+ */
 
 /**
  * @swagger
@@ -281,47 +458,68 @@ export const getTodaysAttendance = async (req: Request, res: Response) => {
  *   get:
  *     tags:
  *       - attendance
- *     summary: Get attendance history
- *     description: Get attendance history for a specific user or all users, filtered by date range.
+ *     summary: Get attendance history for a specific user
+ *     description: Retrieve attendance history for a specific user in the tenant with optional date range and status filtering.
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID whose attendance history is required.
+ *       - in: query
+ *         name: startDate
  *         required: false
  *         schema:
  *           type: string
- *         description: User ID (optional)
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
  *           format: date
- *         description: Start date (optional)
+ *           example: "2026-04-01"
+ *         description: Start date for attendance history filter.
  *       - in: query
  *         name: endDate
+ *         required: false
  *         schema:
  *           type: string
  *           format: date
- *         description: End date (optional)
+ *           example: "2026-04-30"
+ *         description: End date for attendance history filter.
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [PRESENT, ABSENT, LATE, HALF_DAY, ON_LEAVE, HOLIDAY, WEEK_OFF]
+ *           example: ON_LEAVE
+ *         description: Filter attendance records by status.
  *     responses:
  *       200:
- *         description: Attendance history fetched successfully
+ *         description: Attendance history for user fetched successfully
+ *       400:
+ *         description: Invalid request parameters
+ *       401:
+ *         description: Unauthorized
  *       404:
  *         description: No attendance records found
  *       500:
  *         description: Failed to get attendance history
  */
+
+
 export const getAttendanceHistory = async (req: Request, res: Response) => {
     try {
         const actor = (req as any).user;
         const { userId } = (req as any).params;
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate, status } = req.query;
 
         const result = await AttendService.getHistory(
             actor.tenantId,
             {
                 userId: userId || undefined,
                 startDate: startDate ? startDate.toString() : undefined,
-                endDate: endDate ? endDate.toString() : undefined
+                endDate: endDate ? endDate.toString() : undefined,
+                status: status ? String(status) : undefined
             }
         );
         if (!result) {
@@ -336,11 +534,7 @@ export const getAttendanceHistory = async (req: Request, res: Response) => {
             data: result
         });
     } catch (error: any) {
-        return res.status(500).json({
-            status: false,
-            message: "Failed to get attendance history",
-            error: error.message
-        })
+        return handleError(res, error, "Failed to get attendance history");
     }
 }
 
@@ -414,10 +608,6 @@ export const getMonthSummary = async (req: Request, res: Response) => {
             data: result
         });
     } catch (error: any) {
-        return res.status(500).json({
-            status: false,
-            message: "Failed to get monthly attendance summary",
-            error: error.message
-        })
+        return handleError(res, error, "Failed to get monthly attendance summary");
     }
 }

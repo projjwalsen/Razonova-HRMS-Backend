@@ -96,3 +96,17 @@ export const getDaysInMonth = (month: number, year: number, timezone: string) =>
     0
   ).getDate();
 };
+
+export function getYearRangeForTimezone(timezone: string, now: Date = new Date()) {
+  const zonedNow = toZonedTime(now, timezone);
+  const currentYear = zonedNow.getFullYear();
+  return {
+    fromYear : currentYear - 5,
+    toYear: currentYear
+  };
+}
+
+export function isFirstDayOfYearInTimezone(timezone: string, now: Date = new Date()) {
+  const zoned = toZonedTime(now, timezone);
+  return zoned.getMonth() === 0 && zoned.getDate() === 1;
+}
