@@ -172,7 +172,7 @@ export class LeaveService {
                 approverType: LeaveApproverType;
                 roleId?: string;
                 userId?: string;
-                minApprovals?: number;
+                minApprovals?: number | 1;
             }>;
         }
     ) {
@@ -939,19 +939,85 @@ export class LeaveService {
         tenantId: string,
         userId: string,
     ) {
-        return prisma.leaveBalance.findMany({
+        const timezone = await getTenantTimezone(tenantId);
+        const now = getStartOfDay(new Date(), timezone);
+        const year = now.getFullYear();
+
+        let balances = await prisma.leaveBalance.findMany({
             where: {
                 tenantId,
-                userId
+                userId,
+                year
             },
             include: {
                 leaveType: true
             },
             orderBy: [
-                { year: "desc" },
                 { createdAt: "desc" }
             ]
-        })
+        });
+
+        if (balances.length === 0) {
+            const { user, leavePolicy } = await this.resolveApplicablePolicy(tenantId, userId);
+
+            const onProbation = this.isOnProbation(
+                user.employeeProfile?.joiningDate,
+                user.employeeProfile?.probationMonths
+            );
+
+            for (const rule of leavePolicy.rules) {
+                if (onProbation && !rule.allowDuringProbation) {
+                    continue;
+                }
+
+                const allocatedDays = this.calculateAccruedAllocation(
+                    rule.annualAllocation,
+                    rule.accrualFrequency ?? "YEARLY",
+                    rule.accrualAmount,
+                    user.employeeProfile?.joiningDate ?? null,
+                    now
+                );
+
+                await prisma.leaveBalance.upsert({
+                    where: {
+                        tenantId_userId_leaveTypeId_year: {
+                            tenantId,
+                            userId,
+                            leaveTypeId: rule.leaveTypeId,
+                            year
+                        }
+                    },
+                    update: {},
+                    create: {
+                        tenantId,
+                        userId,
+                        leaveTypeId: rule.leaveTypeId,
+                        year,
+                        allocatedDays,
+                        takenDays: 0,
+                        carriedForwardDays: 0,
+                        usedDays: 0,
+                        remainingDays: allocatedDays
+                    }
+                });
+            }
+
+            balances = await prisma.leaveBalance.findMany({
+                where: {
+                    tenantId,
+                    userId,
+                    year
+                },
+                include: {
+                    leaveType: true
+                },
+                orderBy: [
+                    { createdAt: "desc" }
+                ]
+            });
+        }
+
+        return balances;
     }
 
     static async runYearlyCarryForward(
