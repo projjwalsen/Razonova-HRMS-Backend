@@ -3,6 +3,7 @@ import { prisma } from "../../config/db/prisma";
 import { getDayDiffInclusiveTZ, getEndOfDay, getStartOfDay, getTenantTimezone } from "../utils/util";
 import Holidays from "date-holidays";
 import { AttendService } from "../attendence/attend.service";
+import { success } from "zod";
 
 class AppError extends Error {
     statusCode: number;
@@ -1393,8 +1394,8 @@ export class LeaveService {
         leaveRequestId: string,
         remarks?: string
     ){
-        return prisma.$transaction(async (tx) => {
-            const leaveRequest = await prisma.leaveRequest.findFirst({
+        const result = await prisma.$transaction(async (tx) => {
+            const leaveRequest = await tx.leaveRequest.findFirst({
                 where: {
                     id: leaveRequestId,
                     tenantId
@@ -1448,7 +1449,8 @@ export class LeaveService {
                     }
                 })
                 return {
-                    success: true,
+                    needsAttendanceSync: false,
+                    leaveRequest,
                     message: "You have approved this leave request. Waiting for other approvers at the same level to act."
                 }
             }
@@ -1472,7 +1474,8 @@ export class LeaveService {
                     }
                 })
                 return {
-                    success: true,
+                    needsAttendanceSync: false,
+                    leaveRequest,
                     message: "You have approved this leave request. It has been moved to the next approval level."
                 }
             }
@@ -1486,12 +1489,7 @@ export class LeaveService {
                 }
             });
 
-            await AttendService.syncAttendanceForApprovedLeave(
-                tenantId,
-                leaveRequest.userId,
-                leaveRequest.id
-            )
-
+            
             if(leaveRequest.leavePolicyRule?.isPaid) {
                 const balance = await tx.leaveBalance.findFirst({
                     where: {
@@ -1504,7 +1502,7 @@ export class LeaveService {
                 if(!balance){
                     throw new AppError("Leave balance not found for the user and leave type", 404);
                 }
-
+                
                 await tx.leaveBalance.update({
                     where: { id: balance.id },
                     data: {
@@ -1516,16 +1514,28 @@ export class LeaveService {
                         },
                     }
                 })
-
+                
                 await this.recalculateLeaveBalance(tx, balance.id);
             }
-
+            
             return {
-                success: true,
+                needsAttendanceSync: true,
+                leaveRequest,
                 message: "Leave request has been fully approved"
             }
         })
-        
+        if(result.needsAttendanceSync){
+            await AttendService.syncAttendanceForApprovedLeave(
+                tenantId,
+                result.leaveRequest.userId,
+                result.leaveRequest.id
+            )
+
+        }
+        return {
+            success: true,
+            message: result.message
+        }
     }
     static async rejectLeave (
         tenantId: string,
