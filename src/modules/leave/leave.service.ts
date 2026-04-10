@@ -418,7 +418,7 @@ export class LeaveService {
         }
 
         return {
-            calendar,
+            ...calendar,
             year,
             importedSummary
         }
