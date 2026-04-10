@@ -600,6 +600,7 @@ export const createOnboardingInvite = async (req: Request, res: Response) => {
             managerId,
             employeeCode,
             joiningDate,
+            employmentType,
             proposedSalary
         } = req.body;
 
