@@ -936,33 +936,21 @@ export class LeaveService {
     }
 
     static async getMyLeaveBalance(
-        tenantId: string,
-        userId: string,
-    ) {
-        const timezone = await getTenantTimezone(tenantId);
-        const now = getStartOfDay(new Date(), timezone);
-        const year = now.getFullYear();
+    tenantId: string,
+    userId: string,
+) {
+    const timezone = await getTenantTimezone(tenantId);
+    const now = getStartOfDay(new Date(), timezone);
+    const year = now.getFullYear();
 
-        let balances = await prisma.leaveBalance.findMany({
-            where: {
-                tenantId,
-                userId,
-                year
-            },
-            include: {
-                leaveType: true
-            },
-            orderBy: [
-                { createdAt: "desc" }
-            ]
-        });
+    const { user, leavePolicy } = await this.resolveApplicablePolicy(tenantId, userId);
 
-        const { user, leavePolicy } = await this.resolveApplicablePolicy(tenantId, userId);
-        const onProbation = this.isOnProbation(
-            user.employeeProfile?.joiningDate,
-            leavePolicy.probationMonths
-        );
-        const existingBalances = await prisma.leaveBalance.findMany({
+    const onProbation = this.isOnProbation(
+        user.employeeProfile?.joiningDate,
+        leavePolicy.probationMonths
+    );
+
+    const existingBalances = await prisma.leaveBalance.findMany({
         where: {
             tenantId,
             userId,
@@ -973,16 +961,12 @@ export class LeaveService {
         }
     });
 
-    const existingLeaveTypeIds = new Set(
-        existingBalances.map((balance) => balance.leaveTypeId)
+    const existingBalanceMap = new Map(
+        existingBalances.map((balance) => [balance.leaveTypeId, balance])
     );
 
     for (const rule of leavePolicy.rules) {
         if (onProbation && !rule.allowDuringProbation) {
-            continue;
-        }
-
-        if (existingLeaveTypeIds.has(rule.leaveTypeId)) {
             continue;
         }
 
@@ -994,19 +978,34 @@ export class LeaveService {
             now
         );
 
-        await prisma.leaveBalance.create({
-            data: {
-                tenantId,
-                userId,
-                leaveTypeId: rule.leaveTypeId,
-                year,
-                allocatedDays,
-                takenDays: 0,
-                carriedForwardDays: 0,
-                usedDays: 0,
-                remainingDays: allocatedDays
-            }
-        });
+        const existing = existingBalanceMap.get(rule.leaveTypeId);
+
+        if (!existing) {
+            await prisma.leaveBalance.create({
+                data: {
+                    tenantId,
+                    userId,
+                    leaveTypeId: rule.leaveTypeId,
+                    year,
+                    allocatedDays,
+                    takenDays: 0,
+                    carriedForwardDays: 0,
+                    usedDays: 0,
+                    remainingDays: allocatedDays
+                }
+            });
+            continue;
+        }
+
+        if (existing.usedDays === 0 && existing.takenDays === 0) {
+            await prisma.leaveBalance.update({
+                where: { id: existing.id },
+                data: {
+                    allocatedDays,
+                    remainingDays: allocatedDays + existing.carriedForwardDays - existing.usedDays
+                }
+            });
+        }
     }
 
     return prisma.leaveBalance.findMany({
@@ -1022,7 +1021,7 @@ export class LeaveService {
             { createdAt: "desc" }
         ]
     });
-    }
+}
 
     static async runYearlyCarryForward(
         tenantId: string,
