@@ -49,6 +49,7 @@ router.delete("/holiday-calendar/:calendarId", LeaveController.deleteHolidayCale
 router.get("/holiday-calendar/active", LeaveController.getActiveHolidayCalendar);
 
 router.post("/holiday", LeaveController.createHoliday);
+router.delete("/holiday/:holidayId", LeaveController.deleteHoliday);
 
 /* -------------------------------------------------------------------------- */
 /*                               WORK WEEK                                     */

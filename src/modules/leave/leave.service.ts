@@ -502,6 +502,44 @@ export class LeaveService {
         })
     }
 
+    static async deleteHoliday(
+        tenantId: string,
+        holidayId: string
+    ) {
+        if(!holidayId){
+            throw new Error("Holiday ID is required");
+        }
+
+        const holiday = await prisma.holiday.findFirst({
+            where: {
+                id: holidayId,
+                tenantId
+            },
+            include: {
+                holidayCalendar: true
+            }
+        });
+        if(!holiday) {
+            throw new Error("Holiday not found");
+        }
+
+        await prisma.holiday.delete({
+            where: { id: holidayId }
+        });
+
+        return {
+            success: true,
+            message: `Holiday '${holiday.name}' on ${holiday.date.toISOString().slice(0, 10)} deleted successfully'`,
+            data: {
+                id: holiday.id,
+                name: holiday.name,
+                date: holiday.date,
+                calendarName: holiday.holidayCalendar.name,
+                holidayCalendarId: holiday.holidayCalendarId
+            }
+        }
+    }
+
     static async getHolidaysCalendars(tenantId: string) {
         return prisma.holidayCalendar.findMany({
             where: { tenantId },

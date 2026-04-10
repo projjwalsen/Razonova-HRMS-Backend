@@ -702,6 +702,80 @@ export const createHoliday = async (req: AuthRequest, res: Response) => {
     }
 }
 
+/**
+ * @swagger
+ * /leave/holiday/{holidayId}:
+ *   delete:
+ *     summary: Delete a holiday
+ *     tags: [Leave]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: holidayId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Holiday ID
+ *     responses:
+ *       200:
+ *         description: Holiday deleted successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: true
+ *               message: Holiday deleted successfully
+ *               data:
+ *                 id: "holiday-id"
+ *                 name: "Durga Puja"
+ *                 date: "2026-10-20T00:00:00.000Z"
+ *       404:
+ *         description: Holiday not found
+ *       500:
+ *         description: Failed to delete holiday
+ */
+export const deleteHoliday = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = (req as any).user;
+
+        if(!actor?.tenantId) {
+            return res.status(400).json({
+                status: false,
+                message: "Tenant ID is required"
+            })
+        }
+
+        const { holidayId } = (req as any).params;
+
+        if(!holidayId) {
+            return res.status(400).json({
+                status: false,
+                message: "Holiday ID is required"
+            })
+        }
+
+        const result = await LeaveService.deleteHoliday(actor.tenantId, holidayId);
+
+        if(!result) {
+            return res.status(404).json({
+                status: false,
+                message: "Failed to delete holiday"
+            })
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Holiday deleted successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to delete holiday",
+            error: error.message
+        })
+    }
+}
+
 /** ______________ ADMIN POV _______________________ */
 /**
  * @swagger
