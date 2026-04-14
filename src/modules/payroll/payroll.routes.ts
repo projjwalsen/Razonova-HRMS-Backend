@@ -11,6 +11,16 @@ router.get(
     "/dashboard-kpis", 
     payrollController.getPayRollDashboard
 );
+/* -------------- PAYROLL COMPONENT MASTER ----------------  */
+router.post(
+    "/component-master", 
+    payrollController.upsertPayrollComponentMaster
+);
+
+router.get(
+    "/component-master", 
+    payrollController.getPayrollComponentMasters
+)
 
 /* -------------- PAYROLL - Create PAYStructure ---------------- */
 router.post(
@@ -24,11 +34,31 @@ router.get(
     payrollController.getPayStructures
 );
 
-/* -------------- PAYROLL - Generate Payroll for Month ---------------- */
+/* -------------- EMPLOYEE PAYROLL COMPONENT OVERRIDE ---------------- */
+router.post(
+    "/employee-components/:userId",
+    payrollController.upsertEmployeePayrollComponents
+)
+
+router.get(
+    "/employee-components/:userId",
+    payrollController.getEmployeePayrollComponents
+)
+
+
+
+
+/* -------------- PAYROLL - Generate DRAFT Payroll ---------------- */
 router.post(
     "/generate", 
-    payrollController.generatePayroll
+    payrollController.generatePayrollForMonth
 );
+
+// update specific user draft payroll for the month
+router.post(
+    "/generate/user", 
+    payrollController.updateFinalPayrollForUser
+)
 
 /* -------------- PAYROLL - Processing ---------------- */
 router.post(
@@ -69,7 +99,7 @@ router.get(
 
 /* -------------- PAYROLL - Get Payroll details by ID ---------------- */
 router.get(
-    "/:payrollId", 
+    "/:payrollId/:userId", 
     payrollController.getPayrollById
 )
 

@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { PayrollService } from "./payroll.service";
 
+// type Request = Request & { user: { id: string; tenantId?: string } };
+
 /**
  * @swagger
  * /payroll/dashboard-kpis:
@@ -73,6 +75,158 @@ export const getPayRollDashboard = async (req: Request, res: Response) => {
 
 /**
  * @swagger
+ * /payroll/component-master:
+ *   post:
+ *     tags:
+ *       - Payroll
+ *     summary: Create or update payroll component master
+ *     description: Creates or updates a reusable payroll component master for the tenant.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - type
+ *               - valueType
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: House Rent Allowance
+ *               type:
+ *                 type: string
+ *                 enum: [EARNING, ALLOWANCE, DEDUCTION, TAX, BONUS]
+ *               valueType:
+ *                 type: string
+ *                 enum: [FLAT, PERCENTAGE_OF_BASIC]
+ *               isTaxable:
+ *                 type: boolean
+ *               isOptional:
+ *                 type: boolean
+ *               isActive:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Payroll component master saved successfully
+ *       400:
+ *         description: Validation failed
+ *       500:
+ *         description: Internal server error
+ */
+
+export const upsertPayrollComponentMaster = async(req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
+
+    if(!tenantId) {
+      return res.status(400).json({
+        status: false,
+        message: "Tenant ID is required"
+      });
+    }
+
+    const {
+      name,
+      type,
+      valueType,
+      isTaxable,
+      isOptional,
+      isActive,
+    } = req.body;
+
+    if(!name || !type || !valueType) {
+      return res.status(400).json({
+        status: false,
+        message: "name, type and valueType are required"
+      });
+    }
+
+    const result = await PayrollService.upsertPayrollComponentMaster(tenantId, {
+      name,
+      type,
+      valueType,
+      isTaxable: Boolean(isTaxable),
+      isOptional: Boolean(isOptional),
+      isActive: Boolean(isActive)
+    });
+
+    if(!result) {
+      return res.status(404).json({
+        status: false,
+        message: "Failed to save payroll component master"
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Payroll component master saved successfully",
+      data: result
+    });
+
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to save payroll component master",
+      error: error.message
+    });
+  }
+}
+
+/**
+ * @swagger
+ * /payroll/component-master:
+ *   get:
+ *     tags:
+ *       - Payroll
+ *     summary: Get payroll component masters
+ *     description: Fetch all payroll component masters for the tenant.
+ *     responses:
+ *       200:
+ *         description: Payroll component masters fetched successfully
+ *       500:
+ *         description: Failed to fetch payroll component masters
+ */
+export const getPayrollComponentMasters = async(req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
+
+    if(!tenantId) {
+      return res.status(400).json({
+        status: false,
+        message: "Tenant ID is required"
+      });
+    }
+
+    const result = await PayrollService.getPayrollComponentMasters(tenantId);
+
+    if(!result) {
+      return res.status(404).json({
+        status: false,
+        message: "Failed to fetch payroll component masters"
+      });
+    }
+    return res.status(200).json({
+      status: true,
+      message: "Payroll component masters fetched successfully",
+      data: result
+    });
+
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch payroll component masters",
+      error: error.message
+    });
+  }
+}
+
+
+/**
+ * @swagger
  * /payroll/pay-structure:
  *   post:
  *     tags:
@@ -138,34 +292,35 @@ export const getPayRollDashboard = async (req: Request, res: Response) => {
 export const upsertPayStructure = async (req: Request, res: Response) => {
   try {
     const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
 
     const {
       name,
       departmentId,
       designationId,
       isDefault,
+      isActive,
       components
     } = req.body;
 
-    if (!name || !Array.isArray(components) || components.length === 0) {
+    if (!name || !Array.isArray(components) || !components.length) {
       return res.status(400).json({
         status: false,
         message: "name and components are required"
       });
     }
 
-    const result = await PayrollService.upsertPayStructure(actor.tenantId, {
+    const result = await PayrollService.upsertPayStructure(tenantId, {
       name,
       departmentId,
       designationId,
+      isActive,
       isDefault,
-      components: components.map((c: any) => ({
-        label: c.label,
-        type: c.componentType,
+      components: (components ?? []).map((c: any) => ({
+        payrollComponentMasterId: c.payrollComponentMasterId,
         valueType: c.valueType,
-        value: Number(c.value),
-        isTaxable: c.isTaxable ?? false,
-        attachmentRequired: c.attachmentRequired ?? false
+        value: c.value,
+        isActive: c.isActive ?? true,
       }))
     });
 
@@ -216,12 +371,158 @@ export const getPayStructures = async (req: Request, res: Response) => {
 
 /**
  * @swagger
+ * /payroll/employee-components/{userId}:
+ *   post:
+ *     tags:
+ *       - Payroll
+ *     summary: Create or update employee payroll components
+ *     description: Saves employee-specific payroll component overrides for a user.
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Employee user ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - components
+ *             properties:
+ *               components:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - payrollComponentMasterId
+ *                     - value
+ *                   properties:
+ *                     payrollComponentMasterId:
+ *                       type: string
+ *                     valueType:
+ *                       type: string
+ *                       enum: [FLAT, PERCENTAGE_OF_BASIC]
+ *                     value:
+ *                       type: number
+ *                     isActive:
+ *                       type: boolean
+ *                     remarks:
+ *                       type: string
+ *     responses:
+ *       200:
+ *         description: Employee payroll components saved successfully
+ *       400:
+ *         description: Validation failed
+ */
+export const upsertEmployeePayrollComponents = async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
+
+    const { userId } = (req as any).params;
+    const { components } = req.body;
+
+    if (!userId || !Array.isArray(components)) {
+      return res.status(400).json({
+        status: false,
+        message: "userId and components array are required"
+      });
+    }
+
+    const compData = components.map((c: any) => ({
+      payrollComponentMasterId: c.payrollComponentMasterId,
+      valueType: c.valueType,
+      value: c.value,
+      isActive: c.isActive ?? true,
+      remarks: c.remarks
+    }));
+
+    const result = await PayrollService.upsertEmployeePayrollComponent(
+      tenantId,
+      userId,
+      {
+        components: compData
+      }
+    );
+    return res.status(200).json({
+      status: true,
+      message: "Employee payroll components saved successfully",
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(400).json({
+      status: false,
+      message: error.message || "Failed to save employee payroll components"
+    });
+  }
+}
+
+/**
+ * @swagger
+ * /payroll/employee-components/{userId}:
+ *   get:
+ *     tags:
+ *       - Payroll
+ *     summary: Get employee payroll components
+ *     description: Fetch employee-specific payroll component overrides for a user.
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Employee user ID
+ *     responses:
+ *       200:
+ *         description: Employee payroll components fetched successfully
+ *       400:
+ *         description: userId is required
+ */
+export const getEmployeePayrollComponents = async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
+
+    const { userId } = (req as any).params;
+
+    if (!userId) {
+      return res.status(400).json({
+        status: false,
+        message: "userId is required"
+      });
+    }
+
+    const result = await PayrollService.getEmployeePayrollComponents(
+      tenantId,
+      userId
+    );
+    return res.status(200).json({
+      status: true,
+      message: "Employee payroll components fetched successfully",
+      data: result
+    });
+
+  } catch (error: any) {
+    return res.status(400).json({
+      status: false,
+      message: error.message || "Failed to fetch employee payroll components"
+    });
+  }
+}
+
+
+/**
+ * @swagger
  * /payroll/generate:
  *   post:
  *     tags:
  *       - Payroll
- *     summary: Generate payroll for month
- *     description: Generates draft payroll entries for all eligible employees for the specified month and year.
+ *     summary: Generate draft payroll for a month
+ *     description: Generates draft payroll entries for all eligible employees for the specified month and year. Optional leave and attendance deduction settings can be provided for this draft generation run.
  *     requestBody:
  *       required: true
  *       content:
@@ -235,22 +536,41 @@ export const getPayStructures = async (req: Request, res: Response) => {
  *               month:
  *                 type: integer
  *                 example: 4
+ *                 description: Payroll month (1-12)
  *               year:
  *                 type: integer
  *                 example: 2026
+ *                 description: Payroll year
+ *               leaveDeduction:
+ *                 type: object
+ *                 description: Optional leave deduction controls for draft payroll generation
+ *                 properties:
+ *                   enabled:
+ *                     type: boolean
+ *                     example: true
+ *                     description: Enable or disable leave deduction during draft generation
+ *               attendanceDeduction:
+ *                 type: object
+ *                 description: Optional attendance deduction controls for draft payroll generation
+ *                 properties:
+ *                   enabled:
+ *                     type: boolean
+ *                     example: true
+ *                     description: Enable or disable attendance deduction during draft generation
  *     responses:
  *       200:
  *         description: Payroll generated successfully
  *       400:
- *         description: Month and year are required or generation failed
+ *         description: Month and year are required or payroll generation failed
  *       404:
- *         description: Payroll generation failed for the specified month and year
+ *         description: Failed to generate payroll for the specified month and year
  */
-export const generatePayroll = async(req: Request, res: Response) => {
+export const generatePayrollForMonth = async(req: Request, res: Response) => {
     try {
         const actor = (req as any).user;
+        const tenantId = actor?.tenantId!;
 
-        const { month, year } = req.body as any;
+        const { month, year, leaveDeduction, attendanceDeduction } = req.body as any;
 
         if (!month || !year) {
             return res.status(400).json({
@@ -260,9 +580,42 @@ export const generatePayroll = async(req: Request, res: Response) => {
         }
 
         const result = await PayrollService.generatePayrollForMonth(
-            actor.tenantId,
-            Number(month),
-            Number(year)    
+          tenantId,
+          Number(month),
+          Number(year),
+          {
+            leaveDeduction: leaveDeduction
+              ? {
+                  enabled: Boolean(leaveDeduction.enabled),
+                  manualLeaveCount:
+                    leaveDeduction.manualLeaveCount !== undefined &&
+                    leaveDeduction.manualLeaveCount !== null
+                      ? Number(leaveDeduction.manualLeaveCount)
+                      : undefined,
+                  manualAmountDeducted:
+                    leaveDeduction.manualAmountDeducted !== undefined &&
+                    leaveDeduction.manualAmountDeducted !== null
+                      ? Number(leaveDeduction.manualAmountDeducted)
+                      : undefined
+                }
+              : undefined,
+
+            attendanceDeduction: attendanceDeduction
+              ? {
+                  enabled: Boolean(attendanceDeduction.enabled),
+                  manualAbsentCount:
+                    attendanceDeduction.manualAbsentCount !== undefined &&
+                    attendanceDeduction.manualAbsentCount !== null
+                      ? Number(attendanceDeduction.manualAbsentCount)
+                      : undefined,
+                  manualAmountDeducted:
+                    attendanceDeduction.manualAmountDeducted !== undefined &&
+                    attendanceDeduction.manualAmountDeducted !== null
+                      ? Number(attendanceDeduction.manualAmountDeducted)
+                      : undefined
+                }
+              : undefined
+          }
         );
         if(!result) {
             return res.status(404).json({
@@ -283,6 +636,167 @@ export const generatePayroll = async(req: Request, res: Response) => {
         }); 
     }
 }
+
+/**
+ * @swagger
+ * /payroll/generate/user:
+ *   post:
+ *     tags:
+ *       - Payroll
+ *     summary: Update final payroll draft for one user
+ *     description: Recalculates one employee's payroll draft with optional leave and attendance deduction overrides before final processing.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - month
+ *               - year
+ *             properties:
+ *               userId:
+ *                 type: string
+ *               month:
+ *                 type: integer
+ *                 example: 4
+ *               year:
+ *                 type: integer
+ *                 example: 2026
+ *               leaveDeduction:
+ *                 type: object
+ *                 properties:
+ *                   enabled:
+ *                     type: boolean
+ *                   manualLeaveCount:
+ *                     type: number
+ *                   manualAmountDeducted:
+ *                     type: number
+ *               attendanceDeduction:
+ *                 type: object
+ *                 properties:
+ *                   enabled:
+ *                     type: boolean
+ *                   manualAbsentCount:
+ *                     type: number
+ *                   manualAmountDeducted:
+ *                     type: number
+ *     responses:
+ *       200:
+ *         description: Final payroll updated successfully for user
+ *       400:
+ *         description: Validation failed
+ *       404:
+ *         description: Payroll/user not found
+ */
+
+export const updateFinalPayrollForUser = async(req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
+
+    const {
+      userId,
+      month,
+      year,
+      leaveDeduction,
+      attendanceDeduction,
+    } = req.body;
+
+    if(!userId){
+      return res.status(400).json({
+        status: false,
+        message: "userId is required"
+      });
+    }
+
+    if(month === undefined || month === null || Number.isNaN(Number(month))){
+      return res.status(400).json({
+        status: false,
+        message: "Valid month is required"
+      });
+    }
+
+    if(year === undefined || year === null || Number.isNaN(Number(year))){
+      return res.status(400).json({
+        status: false,
+        message: "Valid year is required"
+      });
+    }
+
+    const parsedMonth = Number(month);
+    const parsedYear = Number(year);
+
+    if(parsedMonth < 1 || parsedMonth > 12){
+      return res.status(400).json({
+        status: false,
+        message: "Invalid month. Please provide a month between 1 and 12."
+      });
+    }
+
+    const result = await PayrollService.updateFinalPayrollPerUser(
+      tenantId,
+      userId,
+      parsedMonth,
+      parsedYear,
+      {
+        leaveDeduction: leaveDeduction
+        ? {
+            enabled: Boolean(leaveDeduction.enabled),
+            manualLeaveCount: 
+              leaveDeduction.manualLeaveCount !== undefined &&
+              leaveDeduction.manualLeaveCount !== null
+              ? Number(leaveDeduction.manualLeaveCount)
+              : undefined,
+            manualAmountDeducted: 
+              leaveDeduction.manualAmountDeducted !== undefined &&
+              leaveDeduction.manualAmountDeducted !== null
+              ? Number(leaveDeduction.manualAmountDeducted)
+              : undefined,
+          }
+        : undefined,
+
+        attendanceDeduction: attendanceDeduction
+          ? {
+              enabled: Boolean(attendanceDeduction.enabled),
+              manualAbsentCount:
+                attendanceDeduction.manualAbsentCount !== undefined &&
+                attendanceDeduction.manualAbsentCount !== null
+                  ? Number(attendanceDeduction.manualAbsentCount)
+                  : undefined,
+              manualAmountDeducted:
+                attendanceDeduction.manualAmountDeducted !== undefined &&
+                attendanceDeduction.manualAmountDeducted !== null
+                  ? Number(attendanceDeduction.manualAmountDeducted)
+                  : undefined,
+            }
+          : undefined,
+      }
+    );
+
+    if(!result) {
+      return res.status(404).json({
+        status: false,
+        message: "Failed to update final payroll for user with the specified details"
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Final payroll updated successfully for user",
+      data: result
+    });
+
+  } catch (error: any) {
+    return res.status(400).json({
+      status: false,
+      message: error.message || "Failed to update final payroll for user"
+    });
+  }
+}
+
+
 
 /**
  * @swagger
@@ -410,12 +924,13 @@ export const processPayroll = async (req: Request, res: Response) => {
 export const getPayrolls = async (req: Request, res: Response) => {
   try {
     const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
     const { month, year, userId, status } = req.query;
 
-    const result = await PayrollService.getPayrolls(actor.tenantId, {
+    const result = await PayrollService.getPayrolls(tenantId, {
+      userId: userId ? String(userId) : undefined,
       month: month ? Number(month) : undefined,
       year: year ? Number(year) : undefined,
-      userId: userId ? String(userId) : undefined,
       status: status
         ? (String(status) as "DRAFT" | "PROCESSED" | "DISBURSING" | "PAID" | "FAILED" | "CANCELLED")
         : undefined
@@ -500,7 +1015,7 @@ export const getMyPayrolls = async (req: Request, res: Response) => {
 export const getPayrollById = async (req: Request, res: Response) => {
   try {
     const actor = (req as any).user;
-    const { payrollId } = (req as any).params;
+    const { payrollId, userId } = (req as any).params;
 
     if (!payrollId) {
       return res.status(400).json({
@@ -511,7 +1026,9 @@ export const getPayrollById = async (req: Request, res: Response) => {
 
     const result = await PayrollService.getPayrollById(
       actor.tenantId,
-      payrollId
+      payrollId,
+      userId ? String(userId) : undefined,
+      false
     );
 
     if (!result) {
