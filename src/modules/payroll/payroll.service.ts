@@ -846,7 +846,7 @@ export class PayrollService {
                 });
 
 
-                const attendanceBasedGross = Number((payableDays * perDaySalary).toFixed(2));
+                
 
                 const finalTotalDeduction = Number(
                     (
@@ -857,7 +857,7 @@ export class PayrollService {
                 );
 
                 const grossSalary = Number(
-                    (attendanceBasedGross + totalEarnings + totalAllowances + totalBonus).toFixed(2)
+                    (salary + totalEarnings + totalAllowances + totalBonus).toFixed(2)
                 );
 
                 const netSalary = Number(
