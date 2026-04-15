@@ -154,7 +154,7 @@ export class PayrollService {
             return prisma.payStructure.create({
                 data: {
                     tenantId,
-                    name: payload.name,
+                    name: name,
                     departmentId: payload.departmentId,
                     designationId: payload.designationId,
                     isDefault: payload.isDefault || false,
@@ -182,7 +182,7 @@ export class PayrollService {
                 }
             });
             return tx.payStructure.update({
-                where: { id: existing!.id },
+                where: { id: existing.id },
                 data: {
                     departmentId: payload.departmentId,
                     designationId: payload.designationId,
@@ -204,6 +204,7 @@ export class PayrollService {
             })
         })
     }
+    
     static async getPayStructures(tenantId: string) {
         return prisma.payStructure.findMany({
             where: {

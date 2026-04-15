@@ -396,7 +396,7 @@ export const updateMyProfile = async (req: Request, res: Response) => {
                     country: country ?? undefined,
                     pinCode: pinCode ?? undefined,
                     panNumber: panNumber ?? undefined,
-                    aadhaarNumber: aadhaarNumber ?? undefined
+                    aadharNumber: aadhaarNumber ?? undefined
                 },
                 create: {
                     userId: actor.id,
@@ -408,7 +408,7 @@ export const updateMyProfile = async (req: Request, res: Response) => {
                     country: country ?? null,
                     pinCode: pinCode ?? null,
                     panNumber: panNumber ?? null,
-                    aadhaarNumber: aadhaarNumber ?? null
+                    aadharNumber: aadhaarNumber ?? null
                 }
             });
 
@@ -525,7 +525,7 @@ export const adminUpdateEmployee = async (req: Request, res: Response) => {
                     country: country ?? undefined,
                     pinCode: pinCode ?? undefined,
                     panNumber: panNumber ?? undefined,
-                    aadhaarNumber: aadhaarNumber ?? undefined
+                    aadharNumber: aadhaarNumber ?? undefined
                 },
                 create: {
                     userId,
@@ -548,7 +548,7 @@ export const adminUpdateEmployee = async (req: Request, res: Response) => {
                     country: country ?? null,
                     pinCode: pinCode ?? null,
                     panNumber: panNumber ?? null,
-                    aadhaarNumber: aadhaarNumber ?? null
+                    aadharNumber: aadhaarNumber ?? null
                 }
             });
 
