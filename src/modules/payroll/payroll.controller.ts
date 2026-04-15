@@ -373,6 +373,8 @@ export const getPayStructures = async (req: Request, res: Response) => {
     }
 }
 
+export const getPaystructureById = async (req: Request, res: Response) => {}
+
 /**
  * @swagger
  * /payroll/employee-components/{userId}:

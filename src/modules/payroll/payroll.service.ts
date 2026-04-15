@@ -1,6 +1,11 @@
 import { PayrollItemType, PayStructureValueType, Prisma } from "@prisma/client";
 import { prisma } from "../../config/db/prisma";
 import { getDaysInMonth, getPayrollMonthEnd, getPayrollMonthStart, getTenantTimezone } from "../utils/util";
+import path from "path";
+import fs from "fs/promises";
+import puppeteer from "puppeteer";
+import Handlebars from "handlebars";
+import { formatInTimeZone } from "date-fns-tz";
 
 type ResolvedPayrollComponent = {
     payrollComponentMasterId: string,
@@ -275,18 +280,29 @@ export class PayrollService {
     }
     
     static async getPayStructures(tenantId: string) {
-        return prisma.payStructure.findMany({
-            where: {
-                tenantId
-            },
+        return await prisma.payStructure.findMany({
+            where: { tenantId },
             include: {
-                components: true,
-                department: true,
-                designation: true
-            },
-            orderBy: {
-                createdAt: "desc"
+            department: true,
+            designation: true,
+            components: {
+                where: { isActive: true },
+                orderBy: { createdAt: "asc" },
+                include: {
+                payrollMasterComponent: {
+                    select: {
+                    id: true,
+                    name: true,
+                    type: true,
+                    valueType: true,
+                    isTaxable: true,
+                    isOptional: true
+                    }
+                }
+                }
             }
+            },
+            orderBy: { createdAt: "desc" }
         });
     }
 
@@ -1533,4 +1549,88 @@ export class PayrollService {
             }
         });
     }
+
+
+    /* ------------ Payslip Build & Generation --------------- */
+    private static buildPayslipNumber(
+        payroll: {
+            year: number,
+            month: number,
+            id: string
+        }
+    ) {
+        return `PSLIP-${payroll.year}${String(payroll.month).padStart(2, "0")}-${payroll.id.slice(0, 8).toUpperCase()}`
+    }
+
+    private static async renderPayslipHtml(
+        payroll: any,
+        tenantTimezone: string
+    ) {
+        const templatePath = path.join(
+            process.cwd(),
+            "src",
+            "modules",
+            "payroll",
+            "payslip.hbs"
+        );
+
+        const templateSource = await fs.readFile(templatePath, "utf-8");
+
+        Handlebars.registerHelper("money", (value: number) => {
+            return Number(value ?? 0).toFixed(2);
+        });
+
+        const template = Handlebars.compile(templateSource);
+
+        const monthDate = new Date(payroll.year, payroll.month - 1, 1);
+
+        const html = template({
+            company: {
+                name: payroll?.user?.tenant?.name ?? "Company Name",
+                address: payroll?.user?.tenant?.address ?? "Company Address",
+                email: payroll?.user?.tenant?.email ?? ""
+            },
+            payslipNumber: this.buildPayslipNumber(payroll),
+            monthLabel: formatInTimeZone(monthDate, tenantTimezone, "MMMM yyyy"),
+            generatedAt: formatInTimeZone(new Date(), tenantTimezone, "dd MMMM yyyy, hh:mm a"),
+            status: payroll.status,
+
+            employee: {
+                name: payroll.user.name ?? "",
+                email: payroll.user.email ?? "",
+                department: payroll.user.department?.name ?? "",
+                designation: payroll.user.designation?.name ?? "",
+                employeeCode: payroll.user.employeeProfile?.employeeCode ?? "-",
+                bankAccount: payroll.user.bankAccount?.accountNumber ?? "-"
+            },
+
+            baseSalary: payroll.baseSalary ?? 0,
+            grossSalary: payroll.grossSalary ?? 0,
+            totalEarnings: payroll.totalEarnings ?? 0,
+            totalAllowances: payroll.totalAllowances ?? 0,
+            totalBonus: payroll.totalBonus ?? 0,
+            totalDeductions: payroll.totalDeductions ?? 0,
+            totalTax: payroll.totalTax ?? 0,
+            netSalary: payroll.netSalary ?? 0,
+
+            presentDays: payroll.presentDays ?? 0,
+            absentDays: payroll.absentDays ?? 0,
+            lateDays: payroll.lateDays ?? 0,
+            halfDays: payroll.halfDays ?? 0,
+            paidLeaves: payroll.paidLeaves ?? 0,
+            unpaidLeaves: payroll.unpaidLeaves ?? 0,
+            payableDays: payroll.payableDays ?? 0,
+
+            items: (payroll.items ?? []).map((item: any) => ({
+                label: item.label,
+                type: item.type,
+                amount: item.amount,
+                description: item.description
+            }))
+        });
+
+        return html;
+    }
+
+
 }
