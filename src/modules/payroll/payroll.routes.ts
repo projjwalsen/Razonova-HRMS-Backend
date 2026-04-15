@@ -28,6 +28,11 @@ router.post(
     payrollController.upsertPayStructure
 );
 
+router.patch(
+    "/pay-structure",
+    payrollController.upsertPayStructure
+)
+
 /* -------------- PAYROLL - Get PayStructures ---------------- */
 router.get(
     "/pay-structure", 
