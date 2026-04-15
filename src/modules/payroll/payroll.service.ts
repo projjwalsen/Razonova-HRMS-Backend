@@ -98,6 +98,7 @@ export class PayrollService {
     static async upsertPayStructure (
         tenantId: string,
         payload: {
+            id?: string,
             name: string,
             departmentId?: string,
             designationId?: string,
@@ -149,60 +150,99 @@ export class PayrollService {
             }
         })
 
-        if(!existing) {
-            // Create new structure
-            return prisma.payStructure.create({
-                data: {
-                    tenantId,
-                    name: name,
-                    departmentId: payload.departmentId,
-                    designationId: payload.designationId,
-                    isDefault: payload.isDefault || false,
-                    components: {
-                        create: componentsData
-                    }
-                },
-                include: {
-                    department: true,
-                    designation: true,
-                    components: {
-                        include: {
-                            payrollMasterComponent: true
-                        }
-                    }
-                }
-            })
-        }
-
-
-        return prisma.$transaction(async (tx) => {
-            await tx.payStructureComponent.deleteMany({
+        // UPDATE FLOW
+        if (payload.id) {
+            const existingById = await prisma.payStructure.findFirst({
                 where: {
-                    payStructureId: existing.id
+                    id: payload.id,
+                    tenantId
                 }
             });
-            return tx.payStructure.update({
-                where: { id: existing.id },
-                data: {
-                    departmentId: payload.departmentId,
-                    designationId: payload.designationId,
-                    isDefault: payload.isDefault || false,
-                    isActive: payload.isActive ?? true,
-                    components: {
-                        create: componentsData
-                    }
-                },
-                include: {
-                    department: true,
-                    designation: true,
-                    components: {
-                        include: {
-                            payrollMasterComponent: true
-                        }
+
+            if (!existingById) {
+                throw new Error("Pay structure not found");
+            }
+
+            const duplicateByName = await prisma.payStructure.findFirst({
+                where: {
+                    tenantId,
+                    name,
+                    NOT: {
+                        id: payload.id
                     }
                 }
-            })
-        })
+            });
+
+            if (duplicateByName) {
+                throw new Error("A pay structure with this name already exists");
+            }
+
+            return prisma.$transaction(async (tx) => {
+                await tx.payStructureComponent.deleteMany({
+                    where: {
+                        payStructureId: payload.id
+                    }
+                });
+
+                return tx.payStructure.update({
+                    where: { id: payload.id },
+                    data: {
+                        name,
+                        departmentId: payload.departmentId ?? null,
+                        designationId: payload.designationId ?? null,
+                        isDefault: payload.isDefault ?? false,
+                        isActive: payload.isActive ?? true,
+                        components: {
+                            create: componentsData
+                        }
+                    },
+                    include: {
+                        department: true,
+                        designation: true,
+                        components: {
+                            include: {
+                                payrollMasterComponent: true
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        // CREATE FLOW
+        const existingByName = await prisma.payStructure.findFirst({
+            where: {
+                tenantId,
+                name
+            }
+        });
+
+        if (existingByName) {
+            throw new Error("A pay structure with this name already exists");
+        }
+
+        return prisma.payStructure.create({
+            data: {
+                tenantId,
+                name,
+                departmentId: payload.departmentId ?? null,
+                designationId: payload.designationId ?? null,
+                isDefault: payload.isDefault ?? false,
+                isActive: payload.isActive ?? true,
+                components: {
+                    create: componentsData
+                }
+            },
+            include: {
+                department: true,
+                designation: true,
+                components: {
+                    include: {
+                        payrollMasterComponent: true
+                    }
+                }
+            }
+        });
     }
     
     static async getPayStructures(tenantId: string) {

@@ -295,6 +295,7 @@ export const upsertPayStructure = async (req: Request, res: Response) => {
     const tenantId = actor?.tenantId!;
 
     const {
+      id,
       name,
       departmentId,
       designationId,
@@ -311,6 +312,7 @@ export const upsertPayStructure = async (req: Request, res: Response) => {
     }
 
     const result = await PayrollService.upsertPayStructure(tenantId, {
+      id,
       name,
       departmentId,
       designationId,
@@ -326,7 +328,9 @@ export const upsertPayStructure = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       status: true,
-      message: "Pay structure saved successfully",
+      message: id
+        ? "Pay structure updated successfully"
+        : "Pay structure created successfully",
       data: result
     });
   } catch (error: any) {
