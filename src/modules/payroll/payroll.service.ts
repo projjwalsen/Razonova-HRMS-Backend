@@ -1,17 +1,16 @@
 import { PayrollItemType, PayStructureValueType, Prisma } from "@prisma/client";
 import { prisma } from "../../config/db/prisma";
 import { getDaysInMonth, getPayrollMonthEnd, getPayrollMonthStart, getTenantTimezone } from "../utils/util";
-import path from "path";
-import fs from "fs/promises";
-import puppeteer from "puppeteer";
-import Handlebars from "handlebars";
-import { formatInTimeZone } from "date-fns-tz";
+// import path from "path";
+// import fs from "fs/promises";
+// import Handlebars from "handlebars";
+// import { formatInTimeZone } from "date-fns-tz";
 
 type ResolvedPayrollComponent = {
     payrollComponentMasterId: string,
     name?: string | undefined,
     type: "EARNING" | "ALLOWANCE" |"DEDUCTION" | "TAX" | "BONUS",
-    valueType: "FLAT" | "PERCENTAGE_OF_BASIC",
+    valueType: "PERCENTAGE_OF_BASIC" | "COMPANY_FIXED" | "EMPLOYEE_FIXED" | "CUSTOM",
     value: number,
     amount: number,
     isTaxable: boolean,
@@ -47,7 +46,8 @@ export class PayrollService {
         payload: {
             name: string,       
             type: "EARNING" | "ALLOWANCE" |"DEDUCTION" | "TAX" | "BONUS",
-            valueType: "FLAT" | "PERCENTAGE_OF_BASIC",
+            valueType: "PERCENTAGE_OF_BASIC" | "COMPANY_FIXED" | "EMPLOYEE_FIXED" | "CUSTOM",
+            defaultValue?: number, // used if valueType is COMPANY_FIXED or EMPLOYEE_FIXED
             isTaxable?: boolean,
             isOptional?: boolean,
             isActive?: boolean
@@ -61,30 +61,32 @@ export class PayrollService {
                 name
             }
         });
+
+        const data = {
+            name,
+            type: payload.type,
+            valueType: payload.valueType,
+            defaultValue: 
+                payload.defaultValue !== undefined && payload.defaultValue !== null
+                    ? Number(payload.defaultValue)
+                    : null,
+            isTaxable: payload.isTaxable ?? false,
+            isOptional: payload.isOptional ?? false,
+            isActive: payload.isActive ?? true
+        }
+
         if(!existing) {
             return prisma.payrollComponentMaster.create({
                 data: {
                     tenantId,
-                    name,
-                    type: payload.type,
-                    valueType: payload.valueType,
-                    isTaxable: payload.isTaxable ?? false,
-                    isOptional: payload.isOptional ?? false,
-                    isActive: payload.isActive ?? true
+                    ...data
                 }
             })
         }
 
         return prisma.payrollComponentMaster.update({
             where: { id: existing.id },
-            data: {
-                name,
-                type: payload.type,
-                valueType: payload.valueType,
-                isTaxable: payload.isTaxable ?? false,
-                isOptional: payload.isOptional ?? false,
-                isActive: payload.isActive ?? true
-            }
+            data
         })
         
     }
@@ -135,7 +137,6 @@ export class PayrollService {
             id?: string,
             name: string,
             departmentId?: string,
-            designationId?: string,
             isDefault?: boolean,
             isActive?: boolean,
             components: Array<{
@@ -174,12 +175,23 @@ export class PayrollService {
 
         const componentsData = payload.components.map(c => {
             const master = masters.find(m => m.id === c.payrollComponentMasterId)!;
+            const resolvedValueType = c.valueType ?? master.valueType;
+            const resolvedValue =
+            c.value !== undefined && c.value !== null
+                ? Number(c.value)
+                : master.defaultValue;
+
+            if (resolvedValue === undefined || resolvedValue === null) {
+            throw new Error(
+                `Value is required for component '${master.name}' because no defaultValue exists in master`
+            );
+            }
             return {
                 payrollMasterComponent: {
                     connect: { id: c.payrollComponentMasterId }
                 },
-                valueType: c.valueType ?? master.valueType,
-                value: c.value,
+                valueType: resolvedValueType,
+                value: resolvedValue,
                 isActive: c.isActive ?? true,
             }
         })
@@ -223,7 +235,6 @@ export class PayrollService {
                     data: {
                         name,
                         departmentId: payload.departmentId ?? null,
-                        designationId: payload.designationId ?? null,
                         isDefault: payload.isDefault ?? false,
                         isActive: payload.isActive ?? true,
                         components: {
@@ -260,7 +271,6 @@ export class PayrollService {
                 tenantId,
                 name,
                 departmentId: payload.departmentId ?? null,
-                designationId: payload.designationId ?? null,
                 isDefault: payload.isDefault ?? false,
                 isActive: payload.isActive ?? true,
                 components: {
@@ -306,7 +316,60 @@ export class PayrollService {
         });
     }
 
+    //employee salary
+    static async getAllEmployeesForPayroll(tenantId: string) {
+        return prisma.user.findMany({
+            where: {
+                tenantId,
+                isActive: true
+            },
+            select: {
+                id: true,
+                name: true,
+                email: true,
 
+                department: {
+                    select: {
+                        id: true,
+                        name: true
+                    }
+                },
+
+                designation: {
+                    select: {
+                        id: true,
+                        name: true
+                    }
+                },
+
+                employeeProfile: {
+                    select: {
+                        employeeCode: true,
+                        salary: true,
+                        joiningDate: true,
+                        employmentType: true
+                    }
+                },
+
+                bankAccount: {
+                    select: {
+                        accountHolderName: true,
+                        accountNumber: true,
+                        ifscCode: true,
+                        bankName: true,
+                        isVerified: true
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: "desc"
+            }
+        });
+    }
+
+
+
+    // override
     static async upsertEmployeePayrollComponent(
         tenantId: string,
         userId: string,
@@ -324,6 +387,12 @@ export class PayrollService {
             where: {
                 tenantId,
                 id: userId
+            },
+            include: {
+                employeeProfile: true,
+                department: true,
+                designation: true,
+                bankAccount: true
             }
         });
         if(!user) {
@@ -346,9 +415,24 @@ export class PayrollService {
             throw new Error("One or more payroll component masters are invalid");
         }
 
+        // Prevent base salary override from payroll layer
+        const forbiddenBaseComponents = masters.filter(m =>
+            ["basic", "basic pay", "base salary", "basic salary"].includes(
+                m.name.trim().toLowerCase()
+            )
+        );
+
+        if (forbiddenBaseComponents.length > 0) {
+            throw new Error(
+                "Base salary cannot be overridden here. It is always taken from EmployeeProfile.salary"
+            );
+        }
+
         return prisma.$transaction(async (tx) => {
             for(const component of payload.components) {
                 const master = masters.find(m => m.id === component.payrollComponentMasterId)!;
+
+                const resolvedType = component.valueType ?? master.valueType;
 
                 await tx.employeePayrollComponent.upsert({
                     where: {
@@ -358,16 +442,16 @@ export class PayrollService {
                         }
                     },
                     update: {
-                        valueType: component.valueType,
-                        value: component.value,
-                        isActive: component.isActive,
-                        remarks: component.remarks
+                        valueType: resolvedType,
+                        value: Number(component.value),
+                        isActive: component.isActive ?? true,
+                        remarks: component.remarks ?? null
                     },
                     create: {
                         tenantId,
                         userId,
                         payrollMasterComponentId: component.payrollComponentMasterId,
-                        valueType: component.valueType ?? master.valueType,
+                        valueType: resolvedType,
                         value: Number(component.value),
                         isActive: component.isActive ?? true,
                         remarks: component.remarks ?? null
@@ -375,7 +459,7 @@ export class PayrollService {
                 })
             }
 
-            return tx.employeePayrollComponent.findMany({
+            const employeeComponents = await tx.employeePayrollComponent.findMany({
                 where: {
                     userId,
                     tenantId
@@ -387,11 +471,42 @@ export class PayrollService {
                     createdAt: "desc"
                 }
             })
+
+            return {
+                user: {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                    department: user.department,
+                    designation: user.designation,
+                    employeeProfile: user.employeeProfile,
+                    bankAccount: user.bankAccount,
+                    baseSalary: Number(user.employeeProfile?.salary ?? 0)
+                },
+                components: employeeComponents
+            }
         })
     }
 
     static async getEmployeePayrollComponents(tenantId: string, userId: string) {
-        return prisma.employeePayrollComponent.findMany({
+        const user = await prisma.user.findFirst({
+            where: {
+                tenantId,
+                id: userId
+            },
+            include: {
+                employeeProfile: true,
+                department: true,
+                designation: true,
+                bankAccount: true
+            }
+        });
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const components = await prisma.employeePayrollComponent.findMany({
             where: {
                 tenantId,
                 userId,
@@ -403,7 +518,21 @@ export class PayrollService {
             orderBy: {
                 createdAt: "desc"
             }
-        })
+        });
+
+        return {
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                department: user.department,
+                designation: user.designation,
+                employeeProfile: user.employeeProfile,
+                bankAccount: user.bankAccount,
+                baseSalary: Number(user.employeeProfile?.salary ?? 0)
+            },
+            components
+        };
     }
 
     private static calculateComponentAmount(
@@ -426,13 +555,9 @@ export class PayrollService {
         config?: {
             leaveDeduction?: {
                 enabled?: boolean;
-                manualLeaveCount?: number;
-                manualAmountDeducted?: number;
             },
             attendanceDeduction?: {
                 enabled?: boolean;
-                manualAbsentCount?: number;
-                manualAmountDeducted?: number;
             }
         }
     }) {
@@ -456,24 +581,21 @@ export class PayrollService {
         const leaveDeductionEnabled = config?.leaveDeduction?.enabled ?? Boolean(leaveDeductionComponent);
         const attendanceDeductionEnabled = config?.attendanceDeduction?.enabled ?? Boolean(attendanceDeductionComponent);
 
-        const effectiveUnpaidLeaves = config?.leaveDeduction?.manualLeaveCount ?? unpaidLeaves;
-        const effectiveAbsentDays = config?.attendanceDeduction?.manualAbsentCount ?? absentDays;
 
-        const unpaidLeaveDeduction = !leaveDeductionEnabled 
-        ? 0
-        : config?.leaveDeduction?.manualAmountDeducted ??
-        Number((effectiveUnpaidLeaves * perDaySalary).toFixed(2));
 
-        const attendanceDeduction = !attendanceDeductionEnabled
-        ? 0
-        : config?.attendanceDeduction?.manualAmountDeducted ??
-        Number((effectiveAbsentDays * perDaySalary).toFixed(2));
+        const unpaidLeaveDeduction = leaveDeductionEnabled
+        ? Number((unpaidLeaves * perDaySalary).toFixed(2))
+        : 0;
+
+        const attendanceDeduction = attendanceDeductionEnabled
+        ? Number((absentDays * perDaySalary).toFixed(2))
+        : 0;
 
         return {
             leaveDeductionEnabled,
             attendanceDeductionEnabled,
-            effectiveUnpaidLeaves,
-            effectiveAbsentDays,
+            effectiveUnpaidLeaves: unpaidLeaves,
+            effectiveAbsentDays: absentDays,
             unpaidLeaveDeduction,
             attendanceDeduction
         }
@@ -581,14 +703,10 @@ export class PayrollService {
     static async generatePayrollForMonth(tenantId: string, month: number, year: number,
         config?: {
             leaveDeduction?: {
-                enabled: boolean,
-                manualLeaveCount?: number,
-                manualAmountDeducted?: number
+                enabled?: boolean,
             },
             attendanceDeduction?: {
-                enabled: boolean,
-                manualAbsentCount?: number,
-                manualAmountDeducted?: number
+                enabled?: boolean,
             }
         }
     ) {
@@ -870,315 +988,316 @@ export class PayrollService {
         return generatedPayrolls;
     }
 
-    static async updateFinalPayrollPerUser(
-        tenantId: string,
-        userId: string,
-        month: number,
-        year: number,
-        config?: {
-            leaveDeduction?: {
-                enabled: boolean,
-                manualLeaveCount?: number,
-                manualAmountDeducted?: number
-            },
-            attendanceDeduction?: {
-                enabled: boolean,
-                manualAbsentCount?: number,
-                manualAmountDeducted?: number
-            }
-        }
-    ) {
-        const timezone = await getTenantTimezone(tenantId);
+    // not in use
+    // static async updateFinalPayrollPerUser(
+    //     tenantId: string,
+    //     userId: string,
+    //     month: number,
+    //     year: number,
+    //     config?: {
+    //         leaveDeduction?: {
+    //             enabled: boolean,
+    //             manualLeaveCount?: number,
+    //             manualAmountDeducted?: number
+    //         },
+    //         attendanceDeduction?: {
+    //             enabled: boolean,
+    //             manualAbsentCount?: number,
+    //             manualAmountDeducted?: number
+    //         }
+    //     }
+    // ) {
+    //     const timezone = await getTenantTimezone(tenantId);
 
-        const monthStart = getPayrollMonthStart(month, year, timezone);
-        const monthEnd = getPayrollMonthEnd(month, year, timezone)
-        const daysInMonth = getDaysInMonth(month, year, timezone);
+    //     const monthStart = getPayrollMonthStart(month, year, timezone);
+    //     const monthEnd = getPayrollMonthEnd(month, year, timezone)
+    //     const daysInMonth = getDaysInMonth(month, year, timezone);
 
-        const user = await prisma.user.findFirst({
-            where: {
-                tenantId,
-                id: userId,
-                isActive: true
-            },
-            include: {
-                employeeProfile: true,
-                designation: true,
-                department: true,
-            }
-        });
+    //     const user = await prisma.user.findFirst({
+    //         where: {
+    //             tenantId,
+    //             id: userId,
+    //             isActive: true
+    //         },
+    //         include: {
+    //             employeeProfile: true,
+    //             designation: true,
+    //             department: true,
+    //         }
+    //     });
 
-        if(!user) {
-            throw new Error("User not found");
-        }
+    //     if(!user) {
+    //         throw new Error("User not found");
+    //     }
 
-        const salary = Number(user.employeeProfile?.salary ?? 0);
-        if(!salary || salary <= 0) {
-            throw new Error("Employee salary not defined or invalid");
-        }
+    //     const salary = Number(user.employeeProfile?.salary ?? 0);
+    //     if(!salary || salary <= 0) {
+    //         throw new Error("Employee salary not defined or invalid");
+    //     }
 
-        return prisma.$transaction(async (tx) => {
-            const payStructure = await tx.payStructure.findFirst({
-                where: {
-                    tenantId,
-                    isActive: true,
-                    OR: [
-                        {
-                            departmentId: user.departmentId ?? undefined,
-                            designationId: user.designationId ?? undefined
-                        },
-                        {
-                            departmentId: user.departmentId ?? undefined,
-                            designationId: null,
-                        },
-                        {
-                            departmentId: null,
-                            designationId: user.designationId ?? undefined
-                        },
-                        {
-                            isDefault: true
-                        }
-                    ]
-                },
-                include: {
-                    components: {
-                        include: {
-                            payrollMasterComponent: true
-                        }
-                    }
-                },
-                orderBy: [
-                    { isDefault: "asc" },
-                    { createdAt: "desc" }
-                ]
-            });
+    //     return prisma.$transaction(async (tx) => {
+    //         const payStructure = await tx.payStructure.findFirst({
+    //             where: {
+    //                 tenantId,
+    //                 isActive: true,
+    //                 OR: [
+    //                     {
+    //                         departmentId: user.departmentId ?? undefined,
+    //                         designationId: user.designationId ?? undefined
+    //                     },
+    //                     {
+    //                         departmentId: user.departmentId ?? undefined,
+    //                         designationId: null,
+    //                     },
+    //                     {
+    //                         departmentId: null,
+    //                         designationId: user.designationId ?? undefined
+    //                     },
+    //                     {
+    //                         isDefault: true
+    //                     }
+    //                 ]
+    //             },
+    //             include: {
+    //                 components: {
+    //                     include: {
+    //                         payrollMasterComponent: true
+    //                     }
+    //                 }
+    //             },
+    //             orderBy: [
+    //                 { isDefault: "asc" },
+    //                 { createdAt: "desc" }
+    //             ]
+    //         });
 
-            if (!payStructure) {
-                throw new Error("No pay structure assigned to employee");
-            }
+    //         if (!payStructure) {
+    //             throw new Error("No pay structure assigned to employee");
+    //         }
 
-            const attendances = await tx.attendance.findMany({
-                where: {
-                    tenantId,
-                    userId: user.id,
-                    date: {
-                        gte: monthStart,
-                        lte: monthEnd
-                    }
-                }
-            });
+    //         const attendances = await tx.attendance.findMany({
+    //             where: {
+    //                 tenantId,
+    //                 userId: user.id,
+    //                 date: {
+    //                     gte: monthStart,
+    //                     lte: monthEnd
+    //                 }
+    //             }
+    //         });
 
-            const approvedLeaves = await tx.leaveRequest.findMany({
-                where: {
-                    tenantId,
-                    userId: user.id,
-                    status: "APPROVED",
-                    startDate: {
-                        lte: monthEnd
-                    },
-                    endDate: {
-                        gte: monthStart
-                    }
-                },
-                include: {
-                    leavePolicyRule: true,
-                    leaveType: true
-                }
-            });
+    //         const approvedLeaves = await tx.leaveRequest.findMany({
+    //             where: {
+    //                 tenantId,
+    //                 userId: user.id,
+    //                 status: "APPROVED",
+    //                 startDate: {
+    //                     lte: monthEnd
+    //                 },
+    //                 endDate: {
+    //                     gte: monthStart
+    //                 }
+    //             },
+    //             include: {
+    //                 leavePolicyRule: true,
+    //                 leaveType: true
+    //             }
+    //         });
 
-            const presentDays = attendances.filter(a => a.status === "PRESENT").length;
-            const lateDays = attendances.filter(a => a.status === "LATE").length;
-            const halfDays = attendances.filter(a => a.status === "HALF_DAY").length;
-            const absentDays = attendances.filter(a => a.status === "ABSENT").length;
+    //         const presentDays = attendances.filter(a => a.status === "PRESENT").length;
+    //         const lateDays = attendances.filter(a => a.status === "LATE").length;
+    //         const halfDays = attendances.filter(a => a.status === "HALF_DAY").length;
+    //         const absentDays = attendances.filter(a => a.status === "ABSENT").length;
 
-            let paidLeaves = 0;
-            let unpaidLeaves = 0;
+    //         let paidLeaves = 0;
+    //         let unpaidLeaves = 0;
 
-            for(const leave of approvedLeaves) {
-                if(leave.leavePolicyRule?.isPaid){
-                    paidLeaves += leave.totalDays;
-                } else{
-                    unpaidLeaves += leave.totalDays;
-                }
-            }
+    //         for(const leave of approvedLeaves) {
+    //             if(leave.leavePolicyRule?.isPaid){
+    //                 paidLeaves += leave.totalDays;
+    //             } else{
+    //                 unpaidLeaves += leave.totalDays;
+    //             }
+    //         }
 
-            const payableDays = presentDays + lateDays + (halfDays * 0.5) + paidLeaves;
-            const perDaySalary = Number((salary / daysInMonth).toFixed(2));
+    //         const payableDays = presentDays + lateDays + (halfDays * 0.5) + paidLeaves;
+    //         const perDaySalary = Number((salary / daysInMonth).toFixed(2));
 
-            const resolvedComponents = await this.resolvePayrollComponents(
-                tx,
-                tenantId,
-                user.id,
-                payStructure.id,
-                salary
-            );
+    //         const resolvedComponents = await this.resolvePayrollComponents(
+    //             tx,
+    //             tenantId,
+    //             user.id,
+    //             payStructure.id,
+    //             salary
+    //         );
 
-            let totalEarnings = 0;
-            let totalAllowances = 0;
-            let totalDeductions = 0;
-            let totalTax = 0;
-            let totalBonus = 0;
+    //         let totalEarnings = 0;
+    //         let totalAllowances = 0;
+    //         let totalDeductions = 0;
+    //         let totalTax = 0;
+    //         let totalBonus = 0;
 
-            for(const component of resolvedComponents){
-                if(component.type === "EARNING") totalEarnings += component.amount;
-                if(component.type === "ALLOWANCE") totalAllowances += component.amount;
-                if(component.type === "DEDUCTION") totalDeductions += component.amount;
-                if(component.type === "TAX") totalTax += component.amount;
-                if(component.type === "BONUS") totalBonus += component.amount;
-            };
+    //         for(const component of resolvedComponents){
+    //             if(component.type === "EARNING") totalEarnings += component.amount;
+    //             if(component.type === "ALLOWANCE") totalAllowances += component.amount;
+    //             if(component.type === "DEDUCTION") totalDeductions += component.amount;
+    //             if(component.type === "TAX") totalTax += component.amount;
+    //             if(component.type === "BONUS") totalBonus += component.amount;
+    //         };
 
-            const adjustments = this.applyAttendanceLeaveAdjustment({
-                resolvedComponents,
-                unpaidLeaves,
-                absentDays,
-                perDaySalary,
-                config
-            });
+    //         const adjustments = this.applyAttendanceLeaveAdjustment({
+    //             resolvedComponents,
+    //             unpaidLeaves,
+    //             absentDays,
+    //             perDaySalary,
+    //             config
+    //         });
 
-            const attendanceBasedGross = Number((payableDays * perDaySalary).toFixed(2));
+    //         const attendanceBasedGross = Number((payableDays * perDaySalary).toFixed(2));
 
-            const finalTotalDeduction = Number(
-                (
-                    totalDeductions +
-                    adjustments.unpaidLeaveDeduction +
-                    adjustments.attendanceDeduction
-                ).toFixed(2)
-            );
+    //         const finalTotalDeduction = Number(
+    //             (
+    //                 totalDeductions +
+    //                 adjustments.unpaidLeaveDeduction +
+    //                 adjustments.attendanceDeduction
+    //             ).toFixed(2)
+    //         );
 
-            const grossSalary = Number(
-                (
-                    attendanceBasedGross + totalEarnings + totalAllowances + totalBonus
-                ).toFixed(2)
-            );
+    //         const grossSalary = Number(
+    //             (
+    //                 attendanceBasedGross + totalEarnings + totalAllowances + totalBonus
+    //             ).toFixed(2)
+    //         );
 
-            const netSalary = Number(
-                (grossSalary - finalTotalDeduction - totalTax).toFixed(2)
-            );
+    //         const netSalary = Number(
+    //             (grossSalary - finalTotalDeduction - totalTax).toFixed(2)
+    //         );
 
-            const payroll = await tx.payroll.upsert({
-                where: {
-                    tenantId_userId_month_year: {
-                        tenantId,
-                        userId: user.id,
-                        month,
-                        year
-                    }
-                },
-                update: {
-                    payStructureId: payStructure.id,
-                    baseSalary: salary,
-                    grossSalary,
-                    totalEarnings,
-                    totalAllowances,
-                    totalBonus,
-                    totalDeductions: finalTotalDeduction,
-                    totalTax,
-                    netSalary,
-                    presentDays,
-                    absentDays: adjustments.effectiveAbsentDays,
-                    halfDays,
-                    lateDays,
-                    payableDays,
-                    paidLeaves,
-                    unpaidLeaves: adjustments.effectiveUnpaidLeaves,
-                    status: "DRAFT",
-                    items: {
-                        deleteMany: {}
-                    }
-                },
-                create: {
-                    tenantId,
-                    userId: user.id,
-                    payStructureId: payStructure.id,
-                    month,
-                    year,
-                    baseSalary: salary,
-                    grossSalary,
-                    totalEarnings,
-                    totalAllowances,
-                    totalBonus,
-                    totalDeductions: finalTotalDeduction,
-                    totalTax,
-                    netSalary,
-                    presentDays,
-                    absentDays: adjustments.effectiveAbsentDays,
-                    halfDays,
-                    lateDays,
-                    payableDays,
-                    paidLeaves,
-                    unpaidLeaves: adjustments.effectiveUnpaidLeaves,
-                    status: "DRAFT",
-                }
-            });
+    //         const payroll = await tx.payroll.upsert({
+    //             where: {
+    //                 tenantId_userId_month_year: {
+    //                     tenantId,
+    //                     userId: user.id,
+    //                     month,
+    //                     year
+    //                 }
+    //             },
+    //             update: {
+    //                 payStructureId: payStructure.id,
+    //                 baseSalary: salary,
+    //                 grossSalary,
+    //                 totalEarnings,
+    //                 totalAllowances,
+    //                 totalBonus,
+    //                 totalDeductions: finalTotalDeduction,
+    //                 totalTax,
+    //                 netSalary,
+    //                 presentDays,
+    //                 absentDays: adjustments.effectiveAbsentDays,
+    //                 halfDays,
+    //                 lateDays,
+    //                 payableDays,
+    //                 paidLeaves,
+    //                 unpaidLeaves: adjustments.effectiveUnpaidLeaves,
+    //                 status: "DRAFT",
+    //                 items: {
+    //                     deleteMany: {}
+    //                 }
+    //             },
+    //             create: {
+    //                 tenantId,
+    //                 userId: user.id,
+    //                 payStructureId: payStructure.id,
+    //                 month,
+    //                 year,
+    //                 baseSalary: salary,
+    //                 grossSalary,
+    //                 totalEarnings,
+    //                 totalAllowances,
+    //                 totalBonus,
+    //                 totalDeductions: finalTotalDeduction,
+    //                 totalTax,
+    //                 netSalary,
+    //                 presentDays,
+    //                 absentDays: adjustments.effectiveAbsentDays,
+    //                 halfDays,
+    //                 lateDays,
+    //                 payableDays,
+    //                 paidLeaves,
+    //                 unpaidLeaves: adjustments.effectiveUnpaidLeaves,
+    //                 status: "DRAFT",
+    //             }
+    //         });
 
-            // return the enriched version of the payroll with resolved components for frontend display
-            const generatedItemsData = [
-                ...resolvedComponents.map(comp => ({
-                    payrollId: payroll.id,
-                    label: comp.name as string,
-                    type: comp.type,
-                    amount: comp.amount,
-                    description: `Auto generated from payroll configuration`
-                })),
-                ...(adjustments.unpaidLeaveDeduction > 0
-                    ? [
-                        {
-                            payrollId: payroll.id,
-                            label: "Leave Deduction",
-                            type: "DEDUCTION" as PayrollItemType,
-                            amount: adjustments.unpaidLeaveDeduction,
-                            description: `Deduction for ${adjustments.effectiveUnpaidLeaves} unpaid leave days`
-                        }
-                    ]
-                : []),
-                ...(adjustments.attendanceDeduction > 0
-                    ? [
-                        {
-                            payrollId: payroll.id,
-                            label: "Attendance Deduction",
-                            type: "DEDUCTION" as PayrollItemType,
-                            amount: adjustments.attendanceDeduction,
-                            description: `Deduction for ${adjustments.effectiveAbsentDays} absent days`
-                        }
-                    ]
-                : [])
-            ];
+    //         // return the enriched version of the payroll with resolved components for frontend display
+    //         const generatedItemsData = [
+    //             ...resolvedComponents.map(comp => ({
+    //                 payrollId: payroll.id,
+    //                 label: comp.name as string,
+    //                 type: comp.type,
+    //                 amount: comp.amount,
+    //                 description: `Auto generated from payroll configuration`
+    //             })),
+    //             ...(adjustments.unpaidLeaveDeduction > 0
+    //                 ? [
+    //                     {
+    //                         payrollId: payroll.id,
+    //                         label: "Leave Deduction",
+    //                         type: "DEDUCTION" as PayrollItemType,
+    //                         amount: adjustments.unpaidLeaveDeduction,
+    //                         description: `Deduction for ${adjustments.effectiveUnpaidLeaves} unpaid leave days`
+    //                     }
+    //                 ]
+    //             : []),
+    //             ...(adjustments.attendanceDeduction > 0
+    //                 ? [
+    //                     {
+    //                         payrollId: payroll.id,
+    //                         label: "Attendance Deduction",
+    //                         type: "DEDUCTION" as PayrollItemType,
+    //                         amount: adjustments.attendanceDeduction,
+    //                         description: `Deduction for ${adjustments.effectiveAbsentDays} absent days`
+    //                     }
+    //                 ]
+    //             : [])
+    //         ];
 
 
-            if(generatedItemsData.length ){
-                await tx.payrollItem.createMany({
-                    data: generatedItemsData
-                })
-            }
+    //         if(generatedItemsData.length ){
+    //             await tx.payrollItem.createMany({
+    //                 data: generatedItemsData
+    //             })
+    //         }
 
-            // Refetch payroll with items to return enriched data for frontend display
-            const fullPayroll = await tx.payroll.findFirst({
-                where: { id: payroll.id },
-                include: {
-                    items: true,
-                    user: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true,
-                        }
-                    },
-                    payStructure: {
-                        include: {
-                            components: {
-                                include: {
-                                    payrollMasterComponent: true
-                                }
-                            }
-                        }
-                    },
-                    payslip: true
-                }
-            });
+    //         // Refetch payroll with items to return enriched data for frontend display
+    //         const fullPayroll = await tx.payroll.findFirst({
+    //             where: { id: payroll.id },
+    //             include: {
+    //                 items: true,
+    //                 user: {
+    //                     select: {
+    //                         id: true,
+    //                         name: true,
+    //                         email: true,
+    //                     }
+    //                 },
+    //                 payStructure: {
+    //                     include: {
+    //                         components: {
+    //                             include: {
+    //                                 payrollMasterComponent: true
+    //                             }
+    //                         }
+    //                     }
+    //                 },
+    //                 payslip: true
+    //             }
+    //         });
 
-            return fullPayroll;
-        })
+    //         return fullPayroll;
+    //     })
 
-    }
+    // }
 
     static async processPayroll(tenantId: string, payrollId: string, 
         items? : Array<{
@@ -1552,85 +1671,85 @@ export class PayrollService {
 
 
     /* ------------ Payslip Build & Generation --------------- */
-    private static buildPayslipNumber(
-        payroll: {
-            year: number,
-            month: number,
-            id: string
-        }
-    ) {
-        return `PSLIP-${payroll.year}${String(payroll.month).padStart(2, "0")}-${payroll.id.slice(0, 8).toUpperCase()}`
-    }
+    // private static buildPayslipNumber(
+    //     payroll: {
+    //         year: number,
+    //         month: number,
+    //         id: string
+    //     }
+    // ) {
+    //     return `PSLIP-${payroll.year}${String(payroll.month).padStart(2, "0")}-${payroll.id.slice(0, 8).toUpperCase()}`
+    // }
 
-    private static async renderPayslipHtml(
-        payroll: any,
-        tenantTimezone: string
-    ) {
-        const templatePath = path.join(
-            process.cwd(),
-            "src",
-            "modules",
-            "payroll",
-            "payslip.hbs"
-        );
+    // private static async renderPayslipHtml(
+    //     payroll: any,
+    //     tenantTimezone: string
+    // ) {
+    //     const templatePath = path.join(
+    //         process.cwd(),
+    //         "src",
+    //         "modules",
+    //         "payroll",
+    //         "payslip.hbs"
+    //     );
 
-        const templateSource = await fs.readFile(templatePath, "utf-8");
+    //     const templateSource = await fs.readFile(templatePath, "utf-8");
 
-        Handlebars.registerHelper("money", (value: number) => {
-            return Number(value ?? 0).toFixed(2);
-        });
+    //     Handlebars.registerHelper("money", (value: number) => {
+    //         return Number(value ?? 0).toFixed(2);
+    //     });
 
-        const template = Handlebars.compile(templateSource);
+    //     const template = Handlebars.compile(templateSource);
 
-        const monthDate = new Date(payroll.year, payroll.month - 1, 1);
+    //     const monthDate = new Date(payroll.year, payroll.month - 1, 1);
 
-        const html = template({
-            company: {
-                name: payroll?.user?.tenant?.name ?? "Company Name",
-                address: payroll?.user?.tenant?.address ?? "Company Address",
-                email: payroll?.user?.tenant?.email ?? ""
-            },
-            payslipNumber: this.buildPayslipNumber(payroll),
-            monthLabel: formatInTimeZone(monthDate, tenantTimezone, "MMMM yyyy"),
-            generatedAt: formatInTimeZone(new Date(), tenantTimezone, "dd MMMM yyyy, hh:mm a"),
-            status: payroll.status,
+    //     const html = template({
+    //         company: {
+    //             name: payroll?.user?.tenant?.name ?? "Company Name",
+    //             address: payroll?.user?.tenant?.address ?? "Company Address",
+    //             email: payroll?.user?.tenant?.email ?? ""
+    //         },
+    //         payslipNumber: this.buildPayslipNumber(payroll),
+    //         monthLabel: formatInTimeZone(monthDate, tenantTimezone, "MMMM yyyy"),
+    //         generatedAt: formatInTimeZone(new Date(), tenantTimezone, "dd MMMM yyyy, hh:mm a"),
+    //         status: payroll.status,
 
-            employee: {
-                name: payroll.user.name ?? "",
-                email: payroll.user.email ?? "",
-                department: payroll.user.department?.name ?? "",
-                designation: payroll.user.designation?.name ?? "",
-                employeeCode: payroll.user.employeeProfile?.employeeCode ?? "-",
-                bankAccount: payroll.user.bankAccount?.accountNumber ?? "-"
-            },
+    //         employee: {
+    //             name: payroll.user.name ?? "",
+    //             email: payroll.user.email ?? "",
+    //             department: payroll.user.department?.name ?? "",
+    //             designation: payroll.user.designation?.name ?? "",
+    //             employeeCode: payroll.user.employeeProfile?.employeeCode ?? "-",
+    //             bankAccount: payroll.user.bankAccount?.accountNumber ?? "-"
+    //         },
 
-            baseSalary: payroll.baseSalary ?? 0,
-            grossSalary: payroll.grossSalary ?? 0,
-            totalEarnings: payroll.totalEarnings ?? 0,
-            totalAllowances: payroll.totalAllowances ?? 0,
-            totalBonus: payroll.totalBonus ?? 0,
-            totalDeductions: payroll.totalDeductions ?? 0,
-            totalTax: payroll.totalTax ?? 0,
-            netSalary: payroll.netSalary ?? 0,
+    //         baseSalary: payroll.baseSalary ?? 0,
+    //         grossSalary: payroll.grossSalary ?? 0,
+    //         totalEarnings: payroll.totalEarnings ?? 0,
+    //         totalAllowances: payroll.totalAllowances ?? 0,
+    //         totalBonus: payroll.totalBonus ?? 0,
+    //         totalDeductions: payroll.totalDeductions ?? 0,
+    //         totalTax: payroll.totalTax ?? 0,
+    //         netSalary: payroll.netSalary ?? 0,
 
-            presentDays: payroll.presentDays ?? 0,
-            absentDays: payroll.absentDays ?? 0,
-            lateDays: payroll.lateDays ?? 0,
-            halfDays: payroll.halfDays ?? 0,
-            paidLeaves: payroll.paidLeaves ?? 0,
-            unpaidLeaves: payroll.unpaidLeaves ?? 0,
-            payableDays: payroll.payableDays ?? 0,
+    //         presentDays: payroll.presentDays ?? 0,
+    //         absentDays: payroll.absentDays ?? 0,
+    //         lateDays: payroll.lateDays ?? 0,
+    //         halfDays: payroll.halfDays ?? 0,
+    //         paidLeaves: payroll.paidLeaves ?? 0,
+    //         unpaidLeaves: payroll.unpaidLeaves ?? 0,
+    //         payableDays: payroll.payableDays ?? 0,
 
-            items: (payroll.items ?? []).map((item: any) => ({
-                label: item.label,
-                type: item.type,
-                amount: item.amount,
-                description: item.description
-            }))
-        });
+    //         items: (payroll.items ?? []).map((item: any) => ({
+    //             label: item.label,
+    //             type: item.type,
+    //             amount: item.amount,
+    //             description: item.description
+    //         }))
+    //     });
 
-        return html;
-    }
+    //     return html;
+    // }
 
 
 }

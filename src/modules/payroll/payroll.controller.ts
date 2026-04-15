@@ -101,6 +101,8 @@ export const getPayRollDashboard = async (req: Request, res: Response) => {
  *               valueType:
  *                 type: string
  *                 enum: [FLAT, PERCENTAGE_OF_BASIC]
+ *              defaultValue:
+ *                type: number
  *               isTaxable:
  *                 type: boolean
  *               isOptional:
@@ -134,6 +136,7 @@ export const upsertPayrollComponentMaster = async(req: Request, res: Response) =
       valueType,
       isTaxable,
       isOptional,
+      defaultValue,
       isActive,
     } = req.body;
 
@@ -144,12 +147,19 @@ export const upsertPayrollComponentMaster = async(req: Request, res: Response) =
       });
     }
 
+    const reservedBaseNames = ["basic", "basic pay", "base salary", "basic salary"];
+
+    if (reservedBaseNames.includes(name.trim().toLowerCase())) {
+      throw new Error("Base salary must come from EmployeeProfile.salary and cannot be configured as a payroll component");
+    }
+
     const result = await PayrollService.upsertPayrollComponentMaster(tenantId, {
       name,
       type,
       valueType,
       isTaxable: Boolean(isTaxable),
       isOptional: Boolean(isOptional),
+      defaultValue: defaultValue !== undefined ? Number(defaultValue) : undefined,
       isActive: Boolean(isActive)
     });
 
@@ -373,7 +383,63 @@ export const getPayStructures = async (req: Request, res: Response) => {
     }
 }
 
-export const getPaystructureById = async (req: Request, res: Response) => {}
+
+
+
+export const deletePayStructure = async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
+    const { id } = (req as any).params;
+
+    if (!id) {
+      return res.status(400).json({
+        status: false,
+        message: "pay structure id is required"
+      });
+    }
+
+    await PayrollService.deletePayStructure(tenantId, id);
+
+    return res.status(200).json({
+      status: true,
+      message: "Pay structure deleted successfully"
+    });
+  } catch (error: any) {
+    return res.status(400).json({
+      status: false,
+      message: error.message || "Failed to delete pay structure"
+    });
+  }
+};
+
+
+// show all employee details with baseSaLARY
+export const getAllEmployeesForPayroll = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const tenantId = actor?.tenantId;
+
+        const employees = await PayrollService.getAllEmployeesForPayroll(tenantId);
+
+        return res.status(200).json({
+            status: true,
+            message: "Employees fetched successfully",
+            data: employees
+        });
+
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: error?.message || "Failed to fetch employees"
+        });
+    }
+};
+
+
+
+
+
 
 /**
  * @swagger
@@ -467,32 +533,7 @@ export const upsertEmployeePayrollComponents = async (req: Request, res: Respons
   }
 }
 
-export const deletePayStructure = async (req: Request, res: Response) => {
-  try {
-    const actor = (req as any).user;
-    const tenantId = actor?.tenantId!;
-    const { id } = (req as any).params;
 
-    if (!id) {
-      return res.status(400).json({
-        status: false,
-        message: "pay structure id is required"
-      });
-    }
-
-    await PayrollService.deletePayStructure(tenantId, id);
-
-    return res.status(200).json({
-      status: true,
-      message: "Pay structure deleted successfully"
-    });
-  } catch (error: any) {
-    return res.status(400).json({
-      status: false,
-      message: error.message || "Failed to delete pay structure"
-    });
-  }
-};
 
 /**
  * @swagger
@@ -619,33 +660,13 @@ export const generatePayrollForMonth = async(req: Request, res: Response) => {
           {
             leaveDeduction: leaveDeduction
               ? {
-                  enabled: Boolean(leaveDeduction.enabled),
-                  manualLeaveCount:
-                    leaveDeduction.manualLeaveCount !== undefined &&
-                    leaveDeduction.manualLeaveCount !== null
-                      ? Number(leaveDeduction.manualLeaveCount)
-                      : undefined,
-                  manualAmountDeducted:
-                    leaveDeduction.manualAmountDeducted !== undefined &&
-                    leaveDeduction.manualAmountDeducted !== null
-                      ? Number(leaveDeduction.manualAmountDeducted)
-                      : undefined
+                  enabled: Boolean(leaveDeduction.enabled)
                 }
               : undefined,
 
             attendanceDeduction: attendanceDeduction
               ? {
-                  enabled: Boolean(attendanceDeduction.enabled),
-                  manualAbsentCount:
-                    attendanceDeduction.manualAbsentCount !== undefined &&
-                    attendanceDeduction.manualAbsentCount !== null
-                      ? Number(attendanceDeduction.manualAbsentCount)
-                      : undefined,
-                  manualAmountDeducted:
-                    attendanceDeduction.manualAmountDeducted !== undefined &&
-                    attendanceDeduction.manualAmountDeducted !== null
-                      ? Number(attendanceDeduction.manualAmountDeducted)
-                      : undefined
+                  enabled: Boolean(attendanceDeduction.enabled)
                 }
               : undefined
           }
@@ -724,110 +745,110 @@ export const generatePayrollForMonth = async(req: Request, res: Response) => {
  *         description: Payroll/user not found
  */
 
-export const updateFinalPayrollForUser = async(req: Request, res: Response) => {
-  try {
-    const actor = (req as any).user;
-    const tenantId = actor?.tenantId!;
+// export const updateFinalPayrollForUser = async(req: Request, res: Response) => {
+//   try {
+//     const actor = (req as any).user;
+//     const tenantId = actor?.tenantId!;
 
-    const {
-      userId,
-      month,
-      year,
-      leaveDeduction,
-      attendanceDeduction,
-    } = req.body;
+//     const {
+//       userId,
+//       month,
+//       year,
+//       leaveDeduction,
+//       attendanceDeduction,
+//     } = req.body;
 
-    if(!userId){
-      return res.status(400).json({
-        status: false,
-        message: "userId is required"
-      });
-    }
+//     if(!userId){
+//       return res.status(400).json({
+//         status: false,
+//         message: "userId is required"
+//       });
+//     }
 
-    if(month === undefined || month === null || Number.isNaN(Number(month))){
-      return res.status(400).json({
-        status: false,
-        message: "Valid month is required"
-      });
-    }
+//     if(month === undefined || month === null || Number.isNaN(Number(month))){
+//       return res.status(400).json({
+//         status: false,
+//         message: "Valid month is required"
+//       });
+//     }
 
-    if(year === undefined || year === null || Number.isNaN(Number(year))){
-      return res.status(400).json({
-        status: false,
-        message: "Valid year is required"
-      });
-    }
+//     if(year === undefined || year === null || Number.isNaN(Number(year))){
+//       return res.status(400).json({
+//         status: false,
+//         message: "Valid year is required"
+//       });
+//     }
 
-    const parsedMonth = Number(month);
-    const parsedYear = Number(year);
+//     const parsedMonth = Number(month);
+//     const parsedYear = Number(year);
 
-    if(parsedMonth < 1 || parsedMonth > 12){
-      return res.status(400).json({
-        status: false,
-        message: "Invalid month. Please provide a month between 1 and 12."
-      });
-    }
+//     if(parsedMonth < 1 || parsedMonth > 12){
+//       return res.status(400).json({
+//         status: false,
+//         message: "Invalid month. Please provide a month between 1 and 12."
+//       });
+//     }
 
-    const result = await PayrollService.updateFinalPayrollPerUser(
-      tenantId,
-      userId,
-      parsedMonth,
-      parsedYear,
-      {
-        leaveDeduction: leaveDeduction
-        ? {
-            enabled: Boolean(leaveDeduction.enabled),
-            manualLeaveCount: 
-              leaveDeduction.manualLeaveCount !== undefined &&
-              leaveDeduction.manualLeaveCount !== null
-              ? Number(leaveDeduction.manualLeaveCount)
-              : undefined,
-            manualAmountDeducted: 
-              leaveDeduction.manualAmountDeducted !== undefined &&
-              leaveDeduction.manualAmountDeducted !== null
-              ? Number(leaveDeduction.manualAmountDeducted)
-              : undefined,
-          }
-        : undefined,
+//     const result = await PayrollService.updateFinalPayrollPerUser(
+//       tenantId,
+//       userId,
+//       parsedMonth,
+//       parsedYear,
+//       {
+//         leaveDeduction: leaveDeduction
+//         ? {
+//             enabled: Boolean(leaveDeduction.enabled),
+//             manualLeaveCount: 
+//               leaveDeduction.manualLeaveCount !== undefined &&
+//               leaveDeduction.manualLeaveCount !== null
+//               ? Number(leaveDeduction.manualLeaveCount)
+//               : undefined,
+//             manualAmountDeducted: 
+//               leaveDeduction.manualAmountDeducted !== undefined &&
+//               leaveDeduction.manualAmountDeducted !== null
+//               ? Number(leaveDeduction.manualAmountDeducted)
+//               : undefined,
+//           }
+//         : undefined,
 
-        attendanceDeduction: attendanceDeduction
-          ? {
-              enabled: Boolean(attendanceDeduction.enabled),
-              manualAbsentCount:
-                attendanceDeduction.manualAbsentCount !== undefined &&
-                attendanceDeduction.manualAbsentCount !== null
-                  ? Number(attendanceDeduction.manualAbsentCount)
-                  : undefined,
-              manualAmountDeducted:
-                attendanceDeduction.manualAmountDeducted !== undefined &&
-                attendanceDeduction.manualAmountDeducted !== null
-                  ? Number(attendanceDeduction.manualAmountDeducted)
-                  : undefined,
-            }
-          : undefined,
-      }
-    );
+//         attendanceDeduction: attendanceDeduction
+//           ? {
+//               enabled: Boolean(attendanceDeduction.enabled),
+//               manualAbsentCount:
+//                 attendanceDeduction.manualAbsentCount !== undefined &&
+//                 attendanceDeduction.manualAbsentCount !== null
+//                   ? Number(attendanceDeduction.manualAbsentCount)
+//                   : undefined,
+//               manualAmountDeducted:
+//                 attendanceDeduction.manualAmountDeducted !== undefined &&
+//                 attendanceDeduction.manualAmountDeducted !== null
+//                   ? Number(attendanceDeduction.manualAmountDeducted)
+//                   : undefined,
+//             }
+//           : undefined,
+//       }
+//     );
 
-    if(!result) {
-      return res.status(404).json({
-        status: false,
-        message: "Failed to update final payroll for user with the specified details"
-      });
-    }
+//     if(!result) {
+//       return res.status(404).json({
+//         status: false,
+//         message: "Failed to update final payroll for user with the specified details"
+//       });
+//     }
 
-    return res.status(200).json({
-      status: true,
-      message: "Final payroll updated successfully for user",
-      data: result
-    });
+//     return res.status(200).json({
+//       status: true,
+//       message: "Final payroll updated successfully for user",
+//       data: result
+//     });
 
-  } catch (error: any) {
-    return res.status(400).json({
-      status: false,
-      message: error.message || "Failed to update final payroll for user"
-    });
-  }
-}
+//   } catch (error: any) {
+//     return res.status(400).json({
+//       status: false,
+//       message: error.message || "Failed to update final payroll for user"
+//     });
+//   }
+// }
 
 
 

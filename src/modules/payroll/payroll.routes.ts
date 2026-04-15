@@ -65,10 +65,10 @@ router.post(
 );
 
 // update specific user draft payroll for the month
-router.post(
-    "/generate/user", 
-    payrollController.updateFinalPayrollForUser
-)
+// router.post(
+//     "/generate/user", 
+//     payrollController.updateFinalPayrollForUser
+// )
 
 /* -------------- PAYROLL - Processing ---------------- */
 router.post(
@@ -94,6 +94,15 @@ router.post(
     "/mark-failed/:payrollId", 
     payrollController.markPayrollFailed
 )
+
+
+router.get(
+    "/all-employees",
+    payrollController.getAllEmployeesForPayroll
+)
+
+
+
 
 /* -------------- PAYROLL - COMPANY listing Payrolls ---------------- */
 router.get(
