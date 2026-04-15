@@ -95,6 +95,35 @@ export class PayrollService {
         })
     }
 
+    static async deletePayStructure(tenantId: string, id: string) {
+        const existing = await prisma.payStructure.findFirst({
+            where: {
+                id,
+                tenantId
+            }
+        });
+
+        if (!existing) {
+            throw new Error("Pay structure not found");
+        }
+
+        return prisma.$transaction(async (tx) => {
+            await tx.payStructureComponent.deleteMany({
+                where: {
+                    payStructureId: id
+                }
+            });
+
+            await tx.payStructure.delete({
+                where: {
+                    id
+                }
+            });
+
+            return true;
+        });
+    }
+
     static async upsertPayStructure (
         tenantId: string,
         payload: {

@@ -33,6 +33,11 @@ router.patch(
     payrollController.upsertPayStructure
 )
 
+router.delete(
+    "/pay-structure/:id",
+    payrollController.deletePayStructure
+)
+
 /* -------------- PAYROLL - Get PayStructures ---------------- */
 router.get(
     "/pay-structure", 

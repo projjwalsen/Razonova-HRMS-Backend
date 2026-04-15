@@ -465,6 +465,33 @@ export const upsertEmployeePayrollComponents = async (req: Request, res: Respons
   }
 }
 
+export const deletePayStructure = async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
+    const { id } = (req as any).params;
+
+    if (!id) {
+      return res.status(400).json({
+        status: false,
+        message: "pay structure id is required"
+      });
+    }
+
+    await PayrollService.deletePayStructure(tenantId, id);
+
+    return res.status(200).json({
+      status: true,
+      message: "Pay structure deleted successfully"
+    });
+  } catch (error: any) {
+    return res.status(400).json({
+      status: false,
+      message: error.message || "Failed to delete pay structure"
+    });
+  }
+};
+
 /**
  * @swagger
  * /payroll/employee-components/{userId}:
