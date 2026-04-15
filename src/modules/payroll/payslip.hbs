@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Payslip</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 24px;
+      color: #1f2937;
+      font-size: 12px;
+      background: #fff;
+    }
+
+    .container {
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      padding: 24px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #111827;
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+    }
+
+    .company h1 {
+      margin: 0 0 6px;
+      font-size: 20px;
+    }
+
+    .company p, .meta p, .grid p {
+      margin: 4px 0;
+    }
+
+    .section-title {
+      margin-top: 20px;
+      margin-bottom: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      border-bottom: 1px solid #d1d5db;
+      padding-bottom: 6px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 24px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+
+    th, td {
+      border: 1px solid #d1d5db;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f3f4f6;
+    }
+
+    .right {
+      text-align: right;
+    }
+
+    .totals {
+      width: 320px;
+      margin-left: auto;
+      margin-top: 16px;
+    }
+
+    .footer {
+      margin-top: 24px;
+      text-align: center;
+      font-size: 11px;
+      color: #6b7280;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="company">
+        <h1>{{company.name}}</h1>
+        <p>{{company.address}}</p>
+        <p>{{company.email}}</p>
+      </div>
+      <div class="meta">
+        <p><strong>Payslip No:</strong> {{payslipNumber}}</p>
+        <p><strong>Month:</strong> {{monthLabel}}</p>
+        <p><strong>Generated At:</strong> {{generatedAt}}</p>
+        <p><strong>Status:</strong> {{status}}</p>
+      </div>
+    </div>
+
+    <div class="section-title">Employee Details</div>
+    <div class="grid">
+      <p><strong>Name:</strong> {{employee.name}}</p>
+      <p><strong>Email:</strong> {{employee.email}}</p>
+      <p><strong>Department:</strong> {{employee.department}}</p>
+      <p><strong>Designation:</strong> {{employee.designation}}</p>
+      <p><strong>Employee Code:</strong> {{employee.employeeCode}}</p>
+      <p><strong>Bank Account:</strong> {{employee.bankAccount}}</p>
+    </div>
+
+    <div class="section-title">Attendance Summary</div>
+    <div class="grid">
+      <p><strong>Present Days:</strong> {{presentDays}}</p>
+      <p><strong>Late Days:</strong> {{lateDays}}</p>
+      <p><strong>Half Days:</strong> {{halfDays}}</p>
+      <p><strong>Absent Days:</strong> {{absentDays}}</p>
+      <p><strong>Paid Leaves:</strong> {{paidLeaves}}</p>
+      <p><strong>Unpaid Leaves:</strong> {{unpaidLeaves}}</p>
+      <p><strong>Payable Days:</strong> {{payableDays}}</p>
+      <p><strong>Base Salary:</strong> ₹{{money baseSalary}}</p>
+    </div>
+
+    <div class="section-title">Payroll Breakdown</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Type</th>
+          <th class="right">Amount</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each items}}
+          <tr>
+            <td>{{label}}</td>
+            <td>{{type}}</td>
+            <td class="right">₹{{money amount}}</td>
+            <td>{{description}}</td>
+          </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <table class="totals">
+      <tbody>
+        <tr>
+          <td>Base Salary</td>
+          <td class="right">₹{{money baseSalary}}</td>
+        </tr>
+        <tr>
+          <td>Total Earnings</td>
+          <td class="right">₹{{money totalEarnings}}</td>
+        </tr>
+        <tr>
+          <td>Total Allowances</td>
+          <td class="right">₹{{money totalAllowances}}</td>
+        </tr>
+        <tr>
+          <td>Total Bonus</td>
+          <td class="right">₹{{money totalBonus}}</td>
+        </tr>
+        <tr>
+          <td>Total Deductions</td>
+          <td class="right">₹{{money totalDeductions}}</td>
+        </tr>
+        <tr>
+          <td>Total Tax</td>
+          <td class="right">₹{{money totalTax}}</td>
+        </tr>
+        <tr>
+          <td><strong>Gross Salary</strong></td>
+          <td class="right"><strong>₹{{money grossSalary}}</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Net Salary</strong></td>
+          <td class="right"><strong>₹{{money netSalary}}</strong></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="footer">
+      This is a system-generated payslip and does not require a signature.
+    </div>
+  </div>
+</body>
+</html>
