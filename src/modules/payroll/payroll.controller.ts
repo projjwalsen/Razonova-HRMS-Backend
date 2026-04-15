@@ -308,7 +308,6 @@ export const upsertPayStructure = async (req: Request, res: Response) => {
       id,
       name,
       departmentId,
-      designationId,
       isDefault,
       isActive,
       components
@@ -325,7 +324,6 @@ export const upsertPayStructure = async (req: Request, res: Response) => {
       id,
       name,
       departmentId,
-      designationId,
       isActive,
       isDefault,
       components: (components ?? []).map((c: any) => ({
