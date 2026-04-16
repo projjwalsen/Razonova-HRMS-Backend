@@ -37,6 +37,7 @@ router.get("/policy", LeaveController.getLeavePolicies);
 /* -------------------------------------------------------------------------- */
 
 router.post("/approval-policy", LeaveController.upsertApprovalPolicy);
+router.patch("/approval-policy", LeaveController.upsertApprovalPolicy);
 router.get("/approval-policy", LeaveController.getApprovalPolicies);
 
 /* -------------------------------------------------------------------------- */

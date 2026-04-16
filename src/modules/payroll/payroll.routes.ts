@@ -44,6 +44,11 @@ router.get(
     payrollController.getPayStructures
 );
 
+router.get(
+  "/pay-structure/user/:userId",
+  payrollController.getPayStructureForUser
+);
+
 /* -------------- EMPLOYEE PAYROLL COMPONENT OVERRIDE ---------------- */
 router.post(
     "/employee-components/:userId",

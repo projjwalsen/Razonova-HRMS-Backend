@@ -1,10 +1,11 @@
 import { PayrollItemType, PayStructureValueType, Prisma } from "@prisma/client";
 import { prisma } from "../../config/db/prisma";
 import { getDaysInMonth, getPayrollMonthEnd, getPayrollMonthStart, getTenantTimezone } from "../utils/util";
-// import path from "path";
-// import fs from "fs/promises";
-// import Handlebars from "handlebars";
-// import { formatInTimeZone } from "date-fns-tz";
+import path from "path";
+import fs from "fs/promises";
+import Handlebars from "handlebars";
+import { formatInTimeZone } from "date-fns-tz";
+import puppeteer from "puppeteer";
 
 type ResolvedPayrollComponent = {
     payrollComponentMasterId: string,
@@ -20,25 +21,63 @@ export class PayrollService {
     static async getDashboard(tenantId: string, month: number, year: number) {
         const payrolls = await prisma.payroll.findMany({
             where: {
-                tenantId,
-                month,
-                year
+            tenantId,
+            month,
+            year
+            },
+            select: {
+            id: true,
+            netSalary: true,
+            grossSalary: true,
+            status: true
             }
         });
 
-        const totalPayroll = payrolls.reduce((sum, p) => sum + p.netSalary, 0);
-        const processedCount = payrolls.filter(p => p.status === "PROCESSED" || p.status === "PAID").length;
-        const pendingCount = payrolls.filter(p => p.status === "DRAFT").length;
-        const avgSalary = payrolls.length > 0
-        ? totalPayroll / payrolls.length
-        : 0;
+        const totalPayroll = payrolls.reduce((sum, p) => sum + Number(p.netSalary || 0), 0);
+
+        const processedCount = payrolls.filter(
+            (p) => p.status === "PROCESSED" || p.status === "PAID"
+        ).length;
+
+        const pendingCount = payrolls.filter(
+            (p) => p.status === "DRAFT"
+        ).length;
+
+        const disbursingCount = payrolls.filter(
+            (p) => p.status === "DISBURSING"
+        ).length;
+
+        const failedCount = payrolls.filter(
+            (p) => p.status === "FAILED"
+        ).length;
+
+        const cancelledCount = payrolls.filter(
+            (p) => p.status === "CANCELLED"
+        ).length;
+
+        const avgSalary =
+            payrolls.length > 0
+            ? Number((totalPayroll / payrolls.length).toFixed(2))
+            : 0;
+
+        const totalGrossPayroll = payrolls.reduce(
+            (sum, p) => sum + Number(p.grossSalary || 0),
+            0
+        );
 
         return {
-            totalPayroll,
+            month,
+            year,
+            totalEmployees: payrolls.length,
+            totalPayroll: Number(totalPayroll.toFixed(2)),
+            totalGrossPayroll: Number(totalGrossPayroll.toFixed(2)),
             processedCount,
             pendingCount,
+            disbursingCount,
+            failedCount,
+            cancelledCount,
             avgSalary
-        }
+        };
     }
 
     static async upsertPayrollComponentMaster(
@@ -316,6 +355,79 @@ export class PayrollService {
         });
     }
 
+    static async getPayStructureForUser(tenantId: string, userId: string) {
+        const user = await prisma.user.findFirst({
+            where: {
+            id: userId,
+            tenantId,
+            isActive: true
+            },
+            select: {
+            id: true,
+            departmentId: true,
+            designationId: true
+            }
+        });
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const payStructure = await prisma.payStructure.findFirst({
+            where: {
+            tenantId,
+            isActive: true,
+            OR: [
+                {
+                departmentId: user.departmentId ?? undefined,
+                designationId: user.designationId ?? undefined
+                },
+                {
+                departmentId: user.departmentId ?? undefined,
+                designationId: null
+                },
+                {
+                departmentId: null,
+                designationId: user.designationId ?? undefined
+                },
+                {
+                isDefault: true
+                }
+            ]
+            },
+            include: {
+            department: true,
+            designation: true,
+            components: {
+                where: { isActive: true },
+                orderBy: { createdAt: "asc" },
+                include: {
+                payrollMasterComponent: {
+                    select: {
+                    id: true,
+                    name: true,
+                    type: true,
+                    valueType: true,
+                    isTaxable: true,
+                    isOptional: true
+                    }
+                }
+                }
+            }
+            },
+            orderBy: [
+            { isDefault: "asc" },   // priority: specific > default
+            { createdAt: "desc" }
+            ]
+        });
+
+        if (!payStructure) {
+            throw new Error("No pay structure found for user");
+        }
+
+        return payStructure;
+    }
+
     //employee salary
     static async getAllEmployeesForPayroll(tenantId: string) {
         return prisma.user.findMany({
@@ -368,7 +480,6 @@ export class PayrollService {
     }
 
 
-
     // override
     static async upsertEmployeePayrollComponent(
         tenantId: string,
@@ -398,7 +509,7 @@ export class PayrollService {
         if(!user) {
             throw new Error("User not found");
         }
-        const masterIds = payload.components.map(c => c.payrollComponentMasterId);
+        const masterIds = payload.components.map(c => c.payrollComponentMasterId).filter((id): id is string => Boolean(id));
 
         // find all referenced component masters and validate
         const masters = await prisma.payrollComponentMaster.findMany({
@@ -1671,85 +1782,222 @@ export class PayrollService {
 
 
     /* ------------ Payslip Build & Generation --------------- */
-    // private static buildPayslipNumber(
-    //     payroll: {
-    //         year: number,
-    //         month: number,
-    //         id: string
-    //     }
-    // ) {
-    //     return `PSLIP-${payroll.year}${String(payroll.month).padStart(2, "0")}-${payroll.id.slice(0, 8).toUpperCase()}`
-    // }
+    private static buildPayslipNumber(
+        payroll: {
+            year: number,
+            month: number,
+            id: string
+        }
+    ) {
+        return `PSLIP-${payroll.year}${String(payroll.month).padStart(2, "0")}-${payroll.id.slice(0, 8).toUpperCase()}`
+    }
 
-    // private static async renderPayslipHtml(
-    //     payroll: any,
-    //     tenantTimezone: string
-    // ) {
-    //     const templatePath = path.join(
-    //         process.cwd(),
-    //         "src",
-    //         "modules",
-    //         "payroll",
-    //         "payslip.hbs"
-    //     );
+    private static registerPayslipHelpers(){
+        const hb = Handlebars as any;
 
-    //     const templateSource = await fs.readFile(templatePath, "utf-8");
+        if(!hb.__payslipHelpersRegistered) {
+            Handlebars.registerHelper("money", (value: number) => {
+                return Number(value ?? 0).toFixed(2);
+            });
 
-    //     Handlebars.registerHelper("money", (value: number) => {
-    //         return Number(value ?? 0).toFixed(2);
-    //     });
+            Handlebars.registerHelper("gtZero", (value: number) => {
+                return Number(value ?? 0) > 0;
+            });
 
-    //     const template = Handlebars.compile(templateSource);
+            Handlebars.registerHelper("hasText", (value: string) => {
+                return typeof value === "string" && value.trim().length > 0;
+            });
+            hb.__payslipHelpersRegistered = true;
+        }
+    }
 
-    //     const monthDate = new Date(payroll.year, payroll.month - 1, 1);
+    private static async renderPayslipHtml(
+        payroll: any,
+        tenantTimezone: string
+    ) {
+        // load the payslip template
+        const templatePath = path.join(
+            process.cwd(),
+            "src",
+            "modules",
+            "payroll",
+            "payslip.hbs"
+        );
 
-    //     const html = template({
-    //         company: {
-    //             name: payroll?.user?.tenant?.name ?? "Company Name",
-    //             address: payroll?.user?.tenant?.address ?? "Company Address",
-    //             email: payroll?.user?.tenant?.email ?? ""
-    //         },
-    //         payslipNumber: this.buildPayslipNumber(payroll),
-    //         monthLabel: formatInTimeZone(monthDate, tenantTimezone, "MMMM yyyy"),
-    //         generatedAt: formatInTimeZone(new Date(), tenantTimezone, "dd MMMM yyyy, hh:mm a"),
-    //         status: payroll.status,
+        const templateSource = await fs.readFile(templatePath, "utf-8");
 
-    //         employee: {
-    //             name: payroll.user.name ?? "",
-    //             email: payroll.user.email ?? "",
-    //             department: payroll.user.department?.name ?? "",
-    //             designation: payroll.user.designation?.name ?? "",
-    //             employeeCode: payroll.user.employeeProfile?.employeeCode ?? "-",
-    //             bankAccount: payroll.user.bankAccount?.accountNumber ?? "-"
-    //         },
+        // register handlebars helper for formatting money values
+        this.registerPayslipHelpers();
 
-    //         baseSalary: payroll.baseSalary ?? 0,
-    //         grossSalary: payroll.grossSalary ?? 0,
-    //         totalEarnings: payroll.totalEarnings ?? 0,
-    //         totalAllowances: payroll.totalAllowances ?? 0,
-    //         totalBonus: payroll.totalBonus ?? 0,
-    //         totalDeductions: payroll.totalDeductions ?? 0,
-    //         totalTax: payroll.totalTax ?? 0,
-    //         netSalary: payroll.netSalary ?? 0,
+        const template = Handlebars.compile(templateSource);
 
-    //         presentDays: payroll.presentDays ?? 0,
-    //         absentDays: payroll.absentDays ?? 0,
-    //         lateDays: payroll.lateDays ?? 0,
-    //         halfDays: payroll.halfDays ?? 0,
-    //         paidLeaves: payroll.paidLeaves ?? 0,
-    //         unpaidLeaves: payroll.unpaidLeaves ?? 0,
-    //         payableDays: payroll.payableDays ?? 0,
+        const monthDate = new Date(payroll.year, payroll.month - 1, 1);
 
-    //         items: (payroll.items ?? []).map((item: any) => ({
-    //             label: item.label,
-    //             type: item.type,
-    //             amount: item.amount,
-    //             description: item.description
-    //         }))
-    //     });
+        const filteredItems = (payroll.items ?? [])
+            .filter((item: any) => item.amount && item.amount > 0)
+            .map((item: any) => ({
+                label: item.label ?? "-",
+                type: item.type ?? "-",
+                amount: item.amount ?? 0,
+                description: item.description ?? "-"
+            }))
+            
+        const presentDays = Number(payroll.presentDays ?? 0);
+        const absentDays = Number(payroll.absentDays ?? 0);
+        const lateDays = Number(payroll.lateDays ?? 0);
+        const halfDays = Number(payroll.halfDays ?? 0);
+        const paidLeaves = Number(payroll.paidLeaves ?? 0);
+        const unpaidLeaves = Number(payroll.unpaidLeaves ?? 0);
+        const payableDays = Number(payroll.payableDays ?? 0);
 
-    //     return html;
-    // }
+        // prepare data for the template
+        const html = template({
+            company: {
+                name: payroll?.user?.tenant?.name ?? "Company Name",
+                address: payroll?.user?.tenant?.address ?? "Company Address",
+                email: payroll?.user?.tenant?.email ?? ""
+            },
+            payslipNumber: this.buildPayslipNumber(payroll),
+            monthLabel: formatInTimeZone(monthDate, tenantTimezone, "MMMM yyyy"),
+            generatedAt: formatInTimeZone(new Date(), tenantTimezone, "dd MMMM yyyy, hh:mm a"),
+            status: payroll.status,
 
+            employee: {
+                name: payroll.user.name ?? "",
+                email: payroll.user.email ?? "",
+                department: payroll.user.department?.name ?? "",
+                designation: payroll.user.designation?.name ?? "",
+                employeeCode: payroll.user.employeeProfile?.employeeCode ?? "-",
+                bankAccount: payroll.user.bankAccount?.accountNumber ?? "-"
+            },
 
+            baseSalary: Number(payroll.baseSalary ?? 0),
+            grossSalary: Number(payroll.grossSalary ?? 0),
+            totalEarnings: Number(payroll.totalEarnings ?? 0),
+            totalAllowances: Number(payroll.totalAllowances ?? 0),
+            totalBonus: Number(payroll.totalBonus ?? 0),
+            totalDeductions: Number(payroll.totalDeductions ?? 0),
+            totalTax: Number(payroll.totalTax ?? 0),
+            netSalary: Number(payroll.netSalary ?? 0),
+
+            presentDays,
+            absentDays,
+            lateDays,
+            halfDays,
+            paidLeaves,
+            unpaidLeaves,
+            payableDays,
+
+            hasAbsentDays: absentDays > 0,
+            hasLateDays: lateDays > 0,
+            hasHalfDays: halfDays > 0,
+            hasPaidLeaves: paidLeaves > 0,
+            hasUnpaidLeaves: unpaidLeaves > 0,
+            hasItems: filteredItems.length > 0,
+
+            items: filteredItems,
+        });
+
+        return html;
+    }
+
+    private static async getPayslipPayroll(tenantId: string, payrollId: string, actorUserId: string, selfOnly: boolean) {
+        const payroll = await prisma.payroll.findFirst({
+            where: {
+                id: payrollId,
+                tenantId,
+                ...(selfOnly ? { userId: actorUserId } : {})
+            },
+            include: {
+                user: {
+                    include: {
+                        tenant: true,
+                        department: true,
+                        designation: true,
+                        employeeProfile: true,
+                        bankAccount: true
+                    }
+                },
+                items: true,
+                payStructure: {
+                    include: {
+                        components: {
+                            include: {
+                                payrollMasterComponent: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if(!payroll) {
+            throw new Error("Payroll not found");
+        }
+
+        if(payroll.status !== "PROCESSED" && payroll.status !== "PAID") {
+            throw new Error("Payslip can only be generated for processed or paid payrolls");
+        }
+
+        return payroll;
+    }
+
+    private static async generatePdfBufferForHtml(html: string) {
+        const browser = await puppeteer.launch({
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+
+        try {
+            const page = await browser.newPage();
+            await page.setContent(html, { waitUntil: "networkidle0" });
+            const pdfBuffer = Buffer.from(
+                await page.pdf({
+                    format: "A4",
+                    printBackground: true,
+                    margin: {
+                        top: "16px",
+                        right: "16px",
+                        bottom: "16px",
+                        left: "16px"
+                    }
+                })
+            );
+
+            return pdfBuffer;
+        } catch (error) {
+            await browser.close();
+        }
+    }
+
+    static async generatePayslipForDownload(
+        tenantId: string,
+        payrollId: string,
+        actorUserId: string,
+        selfOnly = false
+    ){
+        const tenantTimezone = await getTenantTimezone(tenantId);
+
+        const payroll = await this.getPayslipPayroll(tenantId, payrollId, actorUserId, selfOnly);
+
+        const html = await this.renderPayslipHtml(payroll, tenantTimezone);
+        const buffer = await this.generatePdfBufferForHtml(html);
+
+        return {
+            buffer,
+            filename: `${this.buildPayslipNumber(payroll)}.pdf`
+        };
+
+    }
+
+    static async generatePayslipPreviewHtml(
+        tenantId: string,
+        payrollId: string,
+        actorUserId: string,
+        selfOnly = false
+    ){
+        const tenantTimezone = await getTenantTimezone(tenantId);
+        const payroll = await this.getPayslipPayroll(tenantId, payrollId, actorUserId, selfOnly);
+        const html = await this.renderPayslipHtml(payroll, tenantTimezone);
+        return html;
+    }
 }

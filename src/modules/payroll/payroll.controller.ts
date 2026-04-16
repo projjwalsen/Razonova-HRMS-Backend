@@ -9,8 +9,8 @@ import { PayrollService } from "./payroll.service";
  *   get:
  *     tags:
  *       - Payroll
- *     summary: Get payroll dashboard
- *     description: Returns payroll KPI data for a given month and year.
+ *     summary: Get payroll dashboard KPIs
+ *     description: Returns payroll KPI data for a given month and year for the logged-in tenant.
  *     parameters:
  *       - in: query
  *         name: month
@@ -28,50 +28,67 @@ import { PayrollService } from "./payroll.service";
  *       200:
  *         description: Payroll dashboard fetched successfully
  *       400:
- *         description: Month and year are required
- *       404:
- *         description: Payroll data not found
+ *         description: Valid month and year are required
+ *       401:
+ *         description: Unauthorized tenant context
  *       500:
- *         description: Internal server error
+ *         description: Failed to fetch payroll dashboard
  */
 export const getPayRollDashboard = async (req: Request, res: Response) => {
-    try {
-        const actor = (req as any).user;
-        const { month, year } = req.query as any;
+  try {
+    const actor = (req as any).user;
+    const tenantId = actor?.tenantId;
+    const { month, year } = req.query;
 
-        if (!month || !year) {
-            return res.status(400).json({
-                status: false,
-                message: "Month and year are required"
-            });
-        }
-
-        const result = await PayrollService.getDashboard(
-            actor.tenantId,
-            Number(month),
-            Number(year)    
-        );
-
-        if(!result) {
-            return res.status(404).json({
-                status: false,
-                message: "Payroll data not found for the specified month and year"
-            });
-        }
-        return res.status(200).json({
-            status: true,
-            message: "Payroll dashboard fetched successfully",
-            data: result
-        });
-
-    } catch (error: any) {
-        return res.status(500).json({
-            status: false,
-            message: "Failed to fetch payroll dashboard",
-            error: error.message
-        });
+    if (!tenantId) {
+      return res.status(401).json({
+        status: false,
+        message: "Unauthorized tenant context"
+      });
     }
-}
+
+    const parsedMonth = Number(month);
+    const parsedYear = Number(year);
+
+    if (!month || !year || Number.isNaN(parsedMonth) || Number.isNaN(parsedYear)) {
+      return res.status(400).json({
+        status: false,
+        message: "Valid month and year are required"
+      });
+    }
+
+    if (parsedMonth < 1 || parsedMonth > 12) {
+      return res.status(400).json({
+        status: false,
+        message: "Month must be between 1 and 12"
+      });
+    }
+
+    if (parsedYear < 2000 || parsedYear > 3000) {
+      return res.status(400).json({
+        status: false,
+        message: "Year is invalid"
+      });
+    }
+
+    const result = await PayrollService.getDashboard(
+      tenantId,
+      parsedMonth,
+      parsedYear
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Payroll dashboard fetched successfully",
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: error?.message || "Failed to fetch payroll dashboard"
+    });
+  }
+};
 
 /**
  * @swagger
@@ -380,6 +397,38 @@ export const getPayStructures = async (req: Request, res: Response) => {
         });
     }
 }
+
+export const getPayStructureForUser = async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
+    const { userId } = (req as any).params;
+
+    if (!userId) {
+      return res.status(400).json({
+        status: false,
+        message: "userId is required"
+      });
+    }
+
+    const data = await PayrollService.getPayStructureForUser(
+      tenantId,
+      userId
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Pay structure fetched successfully",
+      data
+    });
+
+  } catch (error: any) {
+    return res.status(400).json({
+      status: false,
+      message: error.message || "Failed to fetch pay structure"
+    });
+  }
+};
 
 
 

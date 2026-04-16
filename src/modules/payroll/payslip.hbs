@@ -32,6 +32,7 @@
       border-bottom: 2px solid #111827;
       padding-bottom: 12px;
       margin-bottom: 20px;
+      gap: 20px;
     }
 
     .company h1 {
@@ -41,6 +42,11 @@
 
     .company p, .meta p, .grid p {
       margin: 4px 0;
+    }
+
+    .meta {
+      text-align: right;
+      min-width: 220px;
     }
 
     .section-title {
@@ -80,9 +86,18 @@
     }
 
     .totals {
-      width: 320px;
+      width: 340px;
       margin-left: auto;
       margin-top: 16px;
+    }
+
+    .empty-state {
+      margin-top: 8px;
+      padding: 12px;
+      border: 1px dashed #d1d5db;
+      border-radius: 6px;
+      color: #6b7280;
+      background: #f9fafb;
     }
 
     .footer {
@@ -98,9 +113,14 @@
     <div class="header">
       <div class="company">
         <h1>{{company.name}}</h1>
-        <p>{{company.address}}</p>
-        <p>{{company.email}}</p>
+        {{#if company.address}}
+          <p>{{company.address}}</p>
+        {{/if}}
+        {{#if company.email}}
+          <p>{{company.email}}</p>
+        {{/if}}
       </div>
+
       <div class="meta">
         <p><strong>Payslip No:</strong> {{payslipNumber}}</p>
         <p><strong>Month:</strong> {{monthLabel}}</p>
@@ -113,8 +133,15 @@
     <div class="grid">
       <p><strong>Name:</strong> {{employee.name}}</p>
       <p><strong>Email:</strong> {{employee.email}}</p>
-      <p><strong>Department:</strong> {{employee.department}}</p>
-      <p><strong>Designation:</strong> {{employee.designation}}</p>
+
+      {{#if employee.department}}
+        <p><strong>Department:</strong> {{employee.department}}</p>
+      {{/if}}
+
+      {{#if employee.designation}}
+        <p><strong>Designation:</strong> {{employee.designation}}</p>
+      {{/if}}
+
       <p><strong>Employee Code:</strong> {{employee.employeeCode}}</p>
       <p><strong>Bank Account:</strong> {{employee.bankAccount}}</p>
     </div>
@@ -122,36 +149,59 @@
     <div class="section-title">Attendance Summary</div>
     <div class="grid">
       <p><strong>Present Days:</strong> {{presentDays}}</p>
-      <p><strong>Late Days:</strong> {{lateDays}}</p>
-      <p><strong>Half Days:</strong> {{halfDays}}</p>
-      <p><strong>Absent Days:</strong> {{absentDays}}</p>
-      <p><strong>Paid Leaves:</strong> {{paidLeaves}}</p>
-      <p><strong>Unpaid Leaves:</strong> {{unpaidLeaves}}</p>
       <p><strong>Payable Days:</strong> {{payableDays}}</p>
+
+      {{#if hasLateDays}}
+        <p><strong>Late Days:</strong> {{lateDays}}</p>
+      {{/if}}
+
+      {{#if hasHalfDays}}
+        <p><strong>Half Days:</strong> {{halfDays}}</p>
+      {{/if}}
+
+      {{#if hasAbsentDays}}
+        <p><strong>Absent Days:</strong> {{absentDays}}</p>
+      {{/if}}
+
+      {{#if hasPaidLeaves}}
+        <p><strong>Paid Leaves:</strong> {{paidLeaves}}</p>
+      {{/if}}
+
+      {{#if hasUnpaidLeaves}}
+        <p><strong>Unpaid Leaves:</strong> {{unpaidLeaves}}</p>
+      {{/if}}
+
       <p><strong>Base Salary:</strong> ₹{{money baseSalary}}</p>
     </div>
 
     <div class="section-title">Payroll Breakdown</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Label</th>
-          <th>Type</th>
-          <th class="right">Amount</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        {{#each items}}
+
+    {{#if hasItems}}
+      <table>
+        <thead>
           <tr>
-            <td>{{label}}</td>
-            <td>{{type}}</td>
-            <td class="right">₹{{money amount}}</td>
-            <td>{{description}}</td>
+            <th>Label</th>
+            <th>Type</th>
+            <th class="right">Amount</th>
+            <th>Description</th>
           </tr>
-        {{/each}}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {{#each items}}
+            <tr>
+              <td>{{label}}</td>
+              <td>{{type}}</td>
+              <td class="right">₹{{money amount}}</td>
+              <td>{{#if description}}{{description}}{{else}}-{{/if}}</td>
+            </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    {{else}}
+      <div class="empty-state">
+        No additional payroll breakdown items available for this payslip.
+      </div>
+    {{/if}}
 
     <table class="totals">
       <tbody>
@@ -159,26 +209,42 @@
           <td>Base Salary</td>
           <td class="right">₹{{money baseSalary}}</td>
         </tr>
-        <tr>
-          <td>Total Earnings</td>
-          <td class="right">₹{{money totalEarnings}}</td>
-        </tr>
-        <tr>
-          <td>Total Allowances</td>
-          <td class="right">₹{{money totalAllowances}}</td>
-        </tr>
-        <tr>
-          <td>Total Bonus</td>
-          <td class="right">₹{{money totalBonus}}</td>
-        </tr>
-        <tr>
-          <td>Total Deductions</td>
-          <td class="right">₹{{money totalDeductions}}</td>
-        </tr>
-        <tr>
-          <td>Total Tax</td>
-          <td class="right">₹{{money totalTax}}</td>
-        </tr>
+
+        {{#if (gtZero totalEarnings)}}
+          <tr>
+            <td>Total Earnings</td>
+            <td class="right">₹{{money totalEarnings}}</td>
+          </tr>
+        {{/if}}
+
+        {{#if (gtZero totalAllowances)}}
+          <tr>
+            <td>Total Allowances</td>
+            <td class="right">₹{{money totalAllowances}}</td>
+          </tr>
+        {{/if}}
+
+        {{#if (gtZero totalBonus)}}
+          <tr>
+            <td>Total Bonus</td>
+            <td class="right">₹{{money totalBonus}}</td>
+          </tr>
+        {{/if}}
+
+        {{#if (gtZero totalDeductions)}}
+          <tr>
+            <td>Total Deductions</td>
+            <td class="right">₹{{money totalDeductions}}</td>
+          </tr>
+        {{/if}}
+
+        {{#if (gtZero totalTax)}}
+          <tr>
+            <td>Total Tax</td>
+            <td class="right">₹{{money totalTax}}</td>
+          </tr>
+        {{/if}}
+
         <tr>
           <td><strong>Gross Salary</strong></td>
           <td class="right"><strong>₹{{money grossSalary}}</strong></td>
