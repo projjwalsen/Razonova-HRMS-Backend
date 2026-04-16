@@ -133,4 +133,24 @@ router.get(
     payrollController.getMyPayrollById
 )
 
+
+/* --------------------- Payslip ------------------------------------------ */
+router.get(
+    "/payslip/preview/:payrollId", 
+    payrollController.previewPayslip
+);
+router.get(
+    "/payslip/download/:payrollId", 
+    payrollController.downloadPayslip
+);
+
+router.get(
+    "/me/payslip/preview/:payrollId", 
+    payrollController.previewMyPayslip
+);
+router.get(
+    "/me/payslip/download/:payrollId",
+    payrollController.downloadMyPayslip
+);
+
 export default router;

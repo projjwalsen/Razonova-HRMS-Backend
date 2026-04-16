@@ -1370,3 +1370,274 @@ export const markPayrollFailed = async (req: Request, res: Response) => {
     });
   }
 };
+
+
+/* ------------------ Payslip -------------------------- */
+
+// --------------- Preview --------------
+
+/**
+ * @swagger
+ * /payroll/payslip/preview/{payrollId}:
+ *   get:
+ *     tags:
+ *       - Payroll
+ *     summary: Preview payslip
+ *     description: Render an HTML preview of a paid payroll payslip for the given payroll ID.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: payrollId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Payroll ID
+ *     responses:
+ *       200:
+ *         description: Payslip preview rendered successfully
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       400:
+ *         description: payrollId is required or preview generation failed
+ *       404:
+ *         description: Payroll not found
+ *       500:
+ *         description: Internal server error
+ */
+export const previewPayslip = async(req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+        const tenantId = actor?.tenantId!;
+        const { payrollId } = (req as any).params;
+
+        if (!payrollId) {
+            return res.status(400).json({
+                status: false,
+                message: "payrollId is required"
+            });
+        }
+
+        const result = await PayrollService.generatePayslipPreviewHtml(
+            tenantId,
+            payrollId,
+        );
+
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        
+        return res.send(result.html);
+  } catch (error: any) {
+    return res.status(400).json({
+      status: false,
+      message: "Payslip preview error",
+      error: error.message
+    });
+  }
+}
+
+// employee self
+
+/**
+ * @swagger
+ * /payroll/payslip/preview/{payrollId}:
+ *   get:
+ *     tags:
+ *       - Payroll
+ *     summary: Preview payslip
+ *     description: Render an HTML preview of a paid payroll payslip for the given payroll ID.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: payrollId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Payroll ID
+ *     responses:
+ *       200:
+ *         description: Payslip preview rendered successfully
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       400:
+ *         description: payrollId is required or preview generation failed
+ *       404:
+ *         description: Payroll not found
+ *       500:
+ *         description: Internal server error
+ */
+export const previewMyPayslip = async(req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
+    const { payrollId } = (req as any).params;
+
+    if (!payrollId) {
+      return res.status(400).json({
+        status: false,
+        message: "payrollId is required"
+      });
+    }
+
+    const result = await PayrollService.generatePayslipPreviewHtml(
+      tenantId,
+      payrollId,
+      actor.id,
+      true
+    );
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    
+    return res.send(result.html);
+
+  } catch (error: any) {
+    return res.status(400).json({
+      status: false,
+      message: "Payslip preview error",
+      error: error.message
+    });
+  }
+}
+
+
+// ---------- Download ------------
+
+/**
+ * @swagger
+ * /payroll/payslip/download/{payrollId}:
+ *   get:
+ *     tags:
+ *       - Payroll
+ *     summary: Download payslip
+ *     description: Generate and download a PDF payslip for the given paid payroll record.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: payrollId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Payroll ID
+ *     responses:
+ *       200:
+ *         description: Payslip PDF downloaded successfully
+ *         content:
+ *           application/pdf:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       400:
+ *         description: payrollId is required or download generation failed
+ *       404:
+ *         description: Payroll not found
+ *       500:
+ *         description: Internal server error
+ */
+export const downloadPayslip = async(req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
+    const { payrollId } = (req as any).params;
+
+    if (!payrollId) {
+      return res.status(400).json({
+        status: false,
+        message: "payrollId is required"
+      });
+    }
+
+    const result = await PayrollService.generatePayslipForDownload(
+      tenantId,
+      payrollId,
+    );
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=${result.filename}`
+    );
+
+    return res.send(result.buffer);
+
+  } catch (error: any) {
+    return res.status(400).json({
+      status: false,
+      message: "Payslip download error",
+      error: error.message
+    });
+  }
+}
+
+/**
+ * @swagger
+ * /payroll/me/payslip/download/{payrollId}:
+ *   get:
+ *     tags:
+ *       - Payroll
+ *     summary: Download my payslip
+ *     description: Generate and download a PDF payslip for the logged-in employee's paid payroll record.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: payrollId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Payroll ID
+ *     responses:
+ *       200:
+ *         description: My payslip PDF downloaded successfully
+ *         content:
+ *           application/pdf:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       400:
+ *         description: payrollId is required or download generation failed
+ *       404:
+ *         description: Payroll not found
+ *       500:
+ *         description: Internal server error
+ */
+export const downloadMyPayslip = async(req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const tenantId = actor?.tenantId!;
+    const { payrollId } = (req as any).params;
+
+    if (!payrollId) {
+      return res.status(400).json({
+        status: false,
+        message: "payrollId is required"
+      });
+    }
+
+    const result = await PayrollService.generatePayslipForDownload(
+      tenantId,
+      payrollId,
+      actor.id,
+      true
+    );
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=${result.filename}`
+    );
+
+    return res.send(result.buffer);
+
+  } catch (error: any) {
+    return res.status(400).json({
+      status: false,
+      message: "Payslip download error",
+      error: error.message
+    });
+  }
+}

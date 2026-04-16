@@ -544,6 +544,42 @@ export class PayrollService {
                 const master = masters.find(m => m.id === component.payrollComponentMasterId)!;
 
                 const resolvedType = component.valueType ?? master.valueType;
+                const rawValue = component.value;
+
+                // Value validations
+                let finalValue: number | null = null;
+
+                if(resolvedType === "PERCENTAGE_OF_BASIC") {
+                    if(rawValue === undefined || rawValue === null || rawValue < 0) {
+                        throw new Error("Invalid value for percentage-based component");
+                    }
+                    finalValue = Number(rawValue);
+                }
+                else if(resolvedType === "COMPANY_FIXED") {
+                    if(rawValue === undefined || rawValue === null || rawValue < 0) {
+                        throw new Error("Invalid value for fixed amount component");
+                    }
+                    finalValue = Number(rawValue);
+                }
+                else if(resolvedType === "EMPLOYEE_FIXED") {
+                    if(rawValue === undefined || rawValue === null || rawValue < 0) {
+                        throw new Error("Invalid value for employee-fixed component");
+                    }
+                    finalValue = Number(rawValue);
+                }
+                else if (resolvedType === "CUSTOM") {
+                    // Fully flexible
+                    if (rawValue === undefined || rawValue === null) {
+                        throw new Error(`Custom value required for ${master.name}`);
+                    }
+                    finalValue = Number(rawValue);
+                }
+
+                // Skip garbage rows (extra safety)
+                if (finalValue === null || Number.isNaN(finalValue)) {
+                    continue;
+                }
+
 
                 await tx.employeePayrollComponent.upsert({
                     where: {
@@ -554,7 +590,7 @@ export class PayrollService {
                     },
                     update: {
                         valueType: resolvedType,
-                        value: Number(component.value),
+                        value: Number(finalValue),
                         isActive: component.isActive ?? true,
                         remarks: component.remarks ?? null
                     },
@@ -563,7 +599,7 @@ export class PayrollService {
                         userId,
                         payrollMasterComponentId: component.payrollComponentMasterId,
                         valueType: resolvedType,
-                        value: Number(component.value),
+                        value: Number(finalValue),
                         isActive: component.isActive ?? true,
                         remarks: component.remarks ?? null
                     },
@@ -1834,11 +1870,15 @@ export class PayrollService {
         const monthDate = new Date(payroll.year, payroll.month - 1, 1);
 
         const filteredItems = (payroll.items ?? [])
-            .filter((item: any) => item.amount && item.amount > 0)
+            .filter((item: any) => {
+                const label = String(item.label ?? "-").trim();
+                const amount = Number(item.amount ?? 0);
+                return label.length > 0 && amount > 0;
+            })
             .map((item: any) => ({
                 label: item.label ?? "-",
                 type: item.type ?? "-",
-                amount: item.amount ?? 0,
+                amount: Number(item.amount ?? 0),
                 description: item.description ?? "-"
             }))
             
@@ -1901,7 +1941,7 @@ export class PayrollService {
         return html;
     }
 
-    private static async getPayslipPayroll(tenantId: string, payrollId: string, actorUserId: string, selfOnly: boolean) {
+    private static async getPayslipPayroll(tenantId: string, payrollId: string, actorUserId?: string, selfOnly = false) {
         const payroll = await prisma.payroll.findFirst({
             where: {
                 id: payrollId,
@@ -1972,7 +2012,7 @@ export class PayrollService {
     static async generatePayslipForDownload(
         tenantId: string,
         payrollId: string,
-        actorUserId: string,
+        actorUserId?: string,
         selfOnly = false
     ){
         const tenantTimezone = await getTenantTimezone(tenantId);
@@ -1992,12 +2032,15 @@ export class PayrollService {
     static async generatePayslipPreviewHtml(
         tenantId: string,
         payrollId: string,
-        actorUserId: string,
+        actorUserId?: string,
         selfOnly = false
     ){
         const tenantTimezone = await getTenantTimezone(tenantId);
         const payroll = await this.getPayslipPayroll(tenantId, payrollId, actorUserId, selfOnly);
         const html = await this.renderPayslipHtml(payroll, tenantTimezone);
-        return html;
+        return {
+            html,
+            payroll
+        }
     }
 }
