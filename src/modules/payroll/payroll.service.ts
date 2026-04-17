@@ -533,7 +533,7 @@ export class PayrollService {
         userId: string,
         payload: {
             components: Array<{
-                payrollComponentMasterId: string,
+                payrollMasterComponentId: string,
                 valueType?: PayStructureValueType,
                 value: number,
                 isActive?: boolean,
@@ -556,7 +556,7 @@ export class PayrollService {
         if(!user) {
             throw new Error("User not found");
         }
-        const masterIds = payload.components.map(c => c.payrollComponentMasterId).filter((id): id is string => Boolean(id));
+        const masterIds = payload.components.map(c => c.payrollMasterComponentId).filter((id): id is string => Boolean(id));
 
         // find all referenced component masters and validate
         const masters = await prisma.payrollComponentMaster.findMany({
@@ -588,7 +588,7 @@ export class PayrollService {
 
         return prisma.$transaction(async (tx) => {
             for(const component of payload.components) {
-                const master = masters.find(m => m.id === component.payrollComponentMasterId)!;
+                const master = masters.find(m => m.id === component.payrollMasterComponentId)!;
 
                 const resolvedType = component.valueType ?? master.valueType;
                 const rawValue = component.value;
@@ -632,7 +632,7 @@ export class PayrollService {
                     where: {
                         userId_payrollMasterComponentId: {
                             userId,
-                            payrollMasterComponentId: component.payrollComponentMasterId
+                            payrollMasterComponentId: component.payrollMasterComponentId
                         }
                     },
                     update: {
@@ -644,7 +644,7 @@ export class PayrollService {
                     create: {
                         tenantId,
                         userId,
-                        payrollMasterComponentId: component.payrollComponentMasterId,
+                        payrollMasterComponentId: component.payrollMasterComponentId,
                         valueType: resolvedType,
                         value: Number(finalValue),
                         isActive: component.isActive ?? true,

@@ -517,10 +517,10 @@ export const getAllEmployeesForPayroll = async (req: Request, res: Response) => 
  *                 items:
  *                   type: object
  *                   required:
- *                     - payrollComponentMasterId
+ *                     - payrollMasterComponentId
  *                     - value
  *                   properties:
- *                     payrollComponentMasterId:
+ *                     payrollMasterComponentId:
  *                       type: string
  *                     valueType:
  *                       type: string
@@ -553,7 +553,7 @@ export const upsertEmployeePayrollComponents = async (req: Request, res: Respons
     }
 
     const compData = components.map((c: any) => ({
-      payrollComponentMasterId: c.payrollComponentMasterId,
+      payrollMasterComponentId: c.payrollMasterComponentId,
       valueType: c.valueType,
       value: c.value,
       isActive: c.isActive ?? true,
