@@ -118,7 +118,7 @@ export const getPayRollDashboard = async (req: Request, res: Response) => {
  *               valueType:
  *                 type: string
  *                 enum: [FLAT, PERCENTAGE_OF_BASIC]
- *              defaultValue:
+ *               defaultValue:
  *                type: number
  *               isTaxable:
  *                 type: boolean

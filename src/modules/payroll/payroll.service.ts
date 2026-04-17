@@ -358,14 +358,45 @@ export class PayrollService {
     static async getPayStructureForUser(tenantId: string, userId: string) {
         const user = await prisma.user.findFirst({
             where: {
-            id: userId,
-            tenantId,
-            isActive: true
+                id: userId,
+                tenantId,
+                isActive: true
             },
             select: {
-            id: true,
-            departmentId: true,
-            designationId: true
+                id: true,
+                name: true,
+                email: true,
+                departmentId: true,
+                designationId: true,
+                employeeProfile: {
+                    select: {
+                        salary: true,
+                        employeeCode: true,
+                        joiningDate: true,
+                        employmentType: true
+                    }
+                },
+                department: {
+                    select: {
+                        id: true,
+                        name: true
+                    }
+                },
+                designation: {
+                    select: {
+                        id: true,
+                        name: true
+                    }
+                },
+                bankAccount: {
+                    select: {
+                        accountHolderName: true,
+                        accountNumber: true,
+                        ifscCode: true,
+                        bankName: true,
+                        isVerified: true
+                    }
+                }
             }
         });
 
@@ -402,16 +433,20 @@ export class PayrollService {
                 where: { isActive: true },
                 orderBy: { createdAt: "asc" },
                 include: {
-                payrollMasterComponent: {
-                    select: {
-                    id: true,
-                    name: true,
-                    type: true,
-                    valueType: true,
-                    isTaxable: true,
-                    isOptional: true
+                    payrollMasterComponent: {
+                        select: {
+                            id: true,
+                            name: true,
+                            type: true,
+                            valueType: true,
+                            isTaxable: true,
+                            isOptional: true,
+                            defaultValue: true,
+                            includeInPayroll: true,
+                            allowAttendanceLink: true,
+                            allowLeaveLink: true
+                        }
                     }
-                }
                 }
             }
             },
@@ -425,8 +460,20 @@ export class PayrollService {
             throw new Error("No pay structure found for user");
         }
 
-        return payStructure;
-    }
+        return {
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                department: user.department,
+                designation: user.designation,
+                employeeProfile: user.employeeProfile,
+                bankAccount: user.bankAccount,
+                baseSalary: Number(user.employeeProfile?.salary ?? 0)
+            },
+            payStructure
+        }
+    };
 
     //employee salary
     static async getAllEmployeesForPayroll(tenantId: string) {
@@ -1984,6 +2031,7 @@ export class PayrollService {
 
     private static async generatePdfBufferForHtml(html: string) {
         const browser = await puppeteer.launch({
+            headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
 
@@ -2005,6 +2053,8 @@ export class PayrollService {
 
             return pdfBuffer;
         } catch (error) {
+            throw error;
+        } finally {
             await browser.close();
         }
     }
@@ -2021,6 +2071,9 @@ export class PayrollService {
 
         const html = await this.renderPayslipHtml(payroll, tenantTimezone);
         const buffer = await this.generatePdfBufferForHtml(html);
+        if (!buffer || !Buffer.isBuffer(buffer)) {
+            throw new Error("Failed to generate payslip PDF buffer");
+        }
 
         return {
             buffer,
