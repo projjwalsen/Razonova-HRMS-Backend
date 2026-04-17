@@ -374,7 +374,6 @@ export const getLeavePolicies = async (req: AuthRequest, res: Response) => {
 export const upsertApprovalPolicy = async (req: AuthRequest, res: Response) => {
     try {
         const actor = (req as any).user;
-
         const {
             id,
             name,
@@ -383,6 +382,7 @@ export const upsertApprovalPolicy = async (req: AuthRequest, res: Response) => {
             departmentId,
             designationId,
             isActive,
+            minApprovals,
             levels
         } = req.body;
 
@@ -394,12 +394,13 @@ export const upsertApprovalPolicy = async (req: AuthRequest, res: Response) => {
         }
 
         if (!Array.isArray(levels) || !levels.length) {
-        return res.status(400).json({
-            status: false,
-            message: "At least one approval level is required"
-        });
+            return res.status(400).json({
+                status: false,
+                message: "At least one approval level is required"
+            });
         }
 
+        
         const payload = {
             id: id ?? undefined,
             name: name.trim(),
@@ -408,18 +409,30 @@ export const upsertApprovalPolicy = async (req: AuthRequest, res: Response) => {
             departmentId: departmentId ?? null,
             designationId: designationId ?? null,
             isActive: isActive !== undefined ? Boolean(isActive) : true,
+            minApprovals: minApprovals !== undefined && minApprovals !== null
+                ? Number(minApprovals) : 1,
             levels: levels.map((level: any) => ({
                 level: Number(level.level),
                 approverType: level.approverType,
                 roleId: level.roleId ?? undefined,
-                userId: level.userId ?? undefined,
-                minApprovals:
-                level.minApprovals !== undefined && level.minApprovals !== null
-                    ? Number(level.minApprovals)
-                    : 1
+                userId: level.userId ?? undefined
             }))
         };
 
+        if (!payload.minApprovals || payload.minApprovals < 1) {
+            return res.status(400).json({
+                status: false,
+                message: "minApprovals must be at least 1"
+            });
+        }
+
+        if (payload.minApprovals > payload.levels.length) {
+            return res.status(400).json({
+                status: false,
+                message: "minApprovals cannot be greater than total approvers"
+            });
+        }
+            
         for (const level of payload.levels) {
             if (!level.level || level.level < 1) {
                 return res.status(400).json({
@@ -453,17 +466,10 @@ export const upsertApprovalPolicy = async (req: AuthRequest, res: Response) => {
                 message: "userId is required when approverType is SPECIFIC_USER"
                 });
             }
-
-            if (level.minApprovals && level.minApprovals < 1) {
-                return res.status(400).json({
-                status: false,
-                message: "minApprovals must be at least 1"
-                });
-            }
         }
 
         const uniqueLevels = new Set(payload.levels.map((l) => l.level));
-            if (uniqueLevels.size !== payload.levels.length) {
+        if (uniqueLevels.size !== payload.levels.length) {
             return res.status(400).json({
                 status: false,
                 message: "Approval levels must be unique"
@@ -697,6 +703,80 @@ export const createHoliday = async (req: AuthRequest, res: Response) => {
         return res.status(500).json({
             status: false,
             message: "Failed to create holiday",
+            error: error.message
+        })
+    }
+}
+
+/**
+ * @swagger
+ * /leave/holiday/{holidayId}:
+ *   delete:
+ *     summary: Delete a holiday
+ *     tags: [Leave]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: holidayId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Holiday ID
+ *     responses:
+ *       200:
+ *         description: Holiday deleted successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: true
+ *               message: Holiday deleted successfully
+ *               data:
+ *                 id: "holiday-id"
+ *                 name: "Durga Puja"
+ *                 date: "2026-10-20T00:00:00.000Z"
+ *       404:
+ *         description: Holiday not found
+ *       500:
+ *         description: Failed to delete holiday
+ */
+export const deleteHoliday = async (req: AuthRequest, res: Response) => {
+    try {
+        const actor = (req as any).user;
+
+        if(!actor?.tenantId) {
+            return res.status(400).json({
+                status: false,
+                message: "Tenant ID is required"
+            })
+        }
+
+        const { holidayId } = (req as any).params;
+
+        if(!holidayId) {
+            return res.status(400).json({
+                status: false,
+                message: "Holiday ID is required"
+            })
+        }
+
+        const result = await LeaveService.deleteHoliday(actor.tenantId, holidayId);
+
+        if(!result) {
+            return res.status(404).json({
+                status: false,
+                message: "Failed to delete holiday"
+            })
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Holiday deleted successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to delete holiday",
             error: error.message
         })
     }

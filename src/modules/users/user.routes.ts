@@ -18,8 +18,14 @@ router.get(
 
 router.patch(
     '/update/:userId',
-    userController.updateUser
+    userController.updateMyProfile
 )
+
+router.patch(
+    '/admin/update/:userId',
+    userController.adminUpdateEmployee
+)
+
 
 router.delete(
     '/delete/:userId',

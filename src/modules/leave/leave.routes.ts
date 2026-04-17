@@ -37,6 +37,7 @@ router.get("/policy", LeaveController.getLeavePolicies);
 /* -------------------------------------------------------------------------- */
 
 router.post("/approval-policy", LeaveController.upsertApprovalPolicy);
+router.patch("/approval-policy", LeaveController.upsertApprovalPolicy);
 router.get("/approval-policy", LeaveController.getApprovalPolicies);
 
 /* -------------------------------------------------------------------------- */
@@ -49,6 +50,7 @@ router.delete("/holiday-calendar/:calendarId", LeaveController.deleteHolidayCale
 router.get("/holiday-calendar/active", LeaveController.getActiveHolidayCalendar);
 
 router.post("/holiday", LeaveController.createHoliday);
+router.delete("/holiday/:holidayId", LeaveController.deleteHoliday);
 
 /* -------------------------------------------------------------------------- */
 /*                               WORK WEEK                                     */
