@@ -11,6 +11,16 @@ router.get(
     "/dashboard-kpis", 
     payrollController.getPayRollDashboard
 );
+/* -------------- PAYROLL COMPONENT MASTER ----------------  */
+router.post(
+    "/component-master", 
+    payrollController.upsertPayrollComponentMaster
+);
+
+router.get(
+    "/component-master", 
+    payrollController.getPayrollComponentMasters
+)
 
 /* -------------- PAYROLL - Create PAYStructure ---------------- */
 router.post(
@@ -18,17 +28,52 @@ router.post(
     payrollController.upsertPayStructure
 );
 
+router.patch(
+    "/pay-structure",
+    payrollController.upsertPayStructure
+)
+
+router.delete(
+    "/pay-structure/:id",
+    payrollController.deletePayStructure
+)
+
 /* -------------- PAYROLL - Get PayStructures ---------------- */
 router.get(
     "/pay-structure", 
     payrollController.getPayStructures
 );
 
-/* -------------- PAYROLL - Generate Payroll for Month ---------------- */
+router.get(
+  "/pay-structure/user/:userId",
+  payrollController.getPayStructureForUser
+);
+
+/* -------------- EMPLOYEE PAYROLL COMPONENT OVERRIDE ---------------- */
+router.post(
+    "/employee-components/:userId",
+    payrollController.upsertEmployeePayrollComponents
+)
+
+router.get(
+    "/employee-components/:userId",
+    payrollController.getEmployeePayrollComponents
+)
+
+
+
+
+/* -------------- PAYROLL - Generate DRAFT Payroll ---------------- */
 router.post(
     "/generate", 
-    payrollController.generatePayroll
+    payrollController.generatePayrollForMonth
 );
+
+// update specific user draft payroll for the month
+// router.post(
+//     "/generate/user", 
+//     payrollController.updateFinalPayrollForUser
+// )
 
 /* -------------- PAYROLL - Processing ---------------- */
 router.post(
@@ -55,6 +100,15 @@ router.post(
     payrollController.markPayrollFailed
 )
 
+
+router.get(
+    "/all-employees",
+    payrollController.getAllEmployeesForPayroll
+)
+
+
+
+
 /* -------------- PAYROLL - COMPANY listing Payrolls ---------------- */
 router.get(
     "/all-listing", 
@@ -69,7 +123,7 @@ router.get(
 
 /* -------------- PAYROLL - Get Payroll details by ID ---------------- */
 router.get(
-    "/:payrollId", 
+    "/:payrollId/:userId", 
     payrollController.getPayrollById
 )
 
@@ -78,5 +132,25 @@ router.get(
     "/me/:payrollId", 
     payrollController.getMyPayrollById
 )
+
+
+/* --------------------- Payslip ------------------------------------------ */
+router.get(
+    "/payslip/preview/:payrollId", 
+    payrollController.previewPayslip
+);
+router.get(
+    "/payslip/download/:payrollId", 
+    payrollController.downloadPayslip
+);
+
+router.get(
+    "/me/payslip/preview/:payrollId", 
+    payrollController.previewMyPayslip
+);
+router.get(
+    "/me/payslip/download/:payrollId",
+    payrollController.downloadMyPayslip
+);
 
 export default router;

@@ -162,27 +162,80 @@ export class LeaveService {
     static async upsertApprovalPolicy(
         tenantId: string,
         payload: {
+            id?: string;
             name: string;
             leavePolicyId?: string | null;
             leaveTypeId?: string | null;
             departmentId?: string | null;
             designationId?: string | null;
             isActive?: boolean;
+            minApprovals?: number | 1;
             levels: Array<{
                 level: number;
                 approverType: LeaveApproverType;
                 roleId?: string;
                 userId?: string;
-                minApprovals?: number | 1;
             }>;
         }
     ) {
         return prisma.$transaction(async (tx) => {
-            const policy = await tx.leaveApprovalPolicy.upsert({
+            const policyName = payload.name.trim();
+            const effectiveApprovals = payload.minApprovals ?? 1;
+
+            if(effectiveApprovals < 1) {
+                throw new Error("Minimum approvals must be a positive integer");
+            }
+
+            if(effectiveApprovals > payload.levels.length) {
+                throw new Error("Minimum approvals cannot exceed the number of approval levels");
+            }
+
+            let policy;
+
+            if(payload.id) {
+                const existing = await tx.leaveApprovalPolicy.findFirst({
+                    where: {
+                        id: payload.id,
+                        tenantId
+                    }
+                });
+
+                if(!existing) {
+                    throw new Error("Approval policy not found");
+                }
+
+                const duplicateByName = await tx.leaveApprovalPolicy.findFirst({
+                    where: {
+                        tenantId,
+                        name: policyName,
+                        NOT: {
+                            id: payload.id
+                        }
+                    }
+                });
+
+                if(duplicateByName) {
+                    throw new Error("Another approval policy with the same name already exists");
+                }
+
+                policy = await tx.leaveApprovalPolicy.update({
+                    where: { id: payload.id },
+                    data: {
+                        name: policyName,
+                        leavePolicyId: payload.leavePolicyId ?? undefined,
+                        leaveTypeId: payload.leaveTypeId ?? undefined,
+                        departmentId: payload.departmentId ?? undefined,
+                        designationId: payload.designationId ?? undefined,
+                        isActive: payload.isActive !== undefined ? payload.isActive : true
+                    }
+                })
+            }
+
+            policy = await tx.leaveApprovalPolicy.upsert({
                 where: {
                     tenantId_name: {
                         tenantId,
-                        name: payload.name.trim()
+                        name: policyName
                     }
                 },
                 update: {
@@ -205,18 +258,17 @@ export class LeaveService {
             await tx.leaveApprovalPolicyLevel.deleteMany({
                 where: { approvalPolicyId: policy.id }
             });
-            if(payload.levels && payload.levels?.length > 0) {
-                await tx.leaveApprovalPolicyLevel.createMany({
-                    data: payload.levels.map((l) => ({
-                        approvalPolicyId: policy.id,
-                        level: l.level,
-                        approverType: l.approverType,
-                        roleId: l.roleId ?? null,
-                        userId: l.userId ?? null,
-                        minApprovals: l.minApprovals ?? 1
-                    }))
-                })
-            }
+
+            await tx.leaveApprovalPolicyLevel.createMany({
+                data: payload.levels.map((l) => ({
+                    approvalPolicyId: policy.id,
+                    level: l.level,
+                    approverType: l.approverType,
+                    roleId: l.roleId ?? null,
+                    userId: l.userId ?? null,
+                    minApprovals: effectiveApprovals
+                }))
+            })
             return tx.leaveApprovalPolicy.findUnique({
                 where: { id: policy.id },
                 include: {
@@ -500,6 +552,44 @@ export class LeaveService {
                 isOptional: payload.isOptional ?? false
             }
         })
+    }
+
+    static async deleteHoliday(
+        tenantId: string,
+        holidayId: string
+    ) {
+        if(!holidayId){
+            throw new Error("Holiday ID is required");
+        }
+
+        const holiday = await prisma.holiday.findFirst({
+            where: {
+                id: holidayId,
+                tenantId
+            },
+            include: {
+                holidayCalendar: true
+            }
+        });
+        if(!holiday) {
+            throw new Error("Holiday not found");
+        }
+
+        await prisma.holiday.delete({
+            where: { id: holidayId }
+        });
+
+        return {
+            success: true,
+            message: `Holiday '${holiday.name}' on ${holiday.date.toISOString().slice(0, 10)} deleted successfully'`,
+            data: {
+                id: holiday.id,
+                name: holiday.name,
+                date: holiday.date,
+                calendarName: holiday.holidayCalendar.name,
+                holidayCalendarId: holiday.holidayCalendarId
+            }
+        }
     }
 
     static async getHolidaysCalendars(tenantId: string) {

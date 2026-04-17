@@ -49,6 +49,8 @@ model Tenant {
 
   payrolls      Payroll[]
   payStructures PayStructure[]
+  payrollComponentMasters PayrollComponentMaster[]
+  employeePayrollComponents employeePayrollComponent[]
 }
 
 enum RoleType {
@@ -133,6 +135,7 @@ model User {
   payrolls                  Payroll[]
   bankAccount               EmployeeBankAccount?
   leaveBalances             LeaveBalance[]
+  employeePayrollComponents employeePayrollComponent[]
 }
 
 model UserRole {
@@ -320,6 +323,9 @@ model EmployeeProfile {
 
   salary      Float?
   dateOfBirth DateTime?
+
+  panNumber    String? @unique
+  aadharNumber String? @unique
 
   addressLine1 String?
   addressLine2 String?
@@ -741,15 +747,11 @@ enum PayrollItemType {
   BONUS
 }
 
-enum PayStructureCompType {
-  BASIC
-  ALLOWANCE
-  DEDUCTION
-}
-
 enum PayStructureValueType {
-  PERCENTAGE
-  FLAT
+  PERCENTAGE_OF_BASIC
+  COMPANY_FIXED
+  EMPLOYEE_FIXED
+  CUSTOM
 }
 
 enum DisbursementStatus {
@@ -758,6 +760,12 @@ enum DisbursementStatus {
   SUCCESS
   FAILED
   REVERSED
+}
+
+enum PayrollComponentFreq {
+  MONTHLY
+  QUARTERLY
+  YEARLY
 }
 
 model EmployeeBankAccount {
@@ -806,21 +814,111 @@ model PayStructure {
   @@index([tenantId, isActive])
 }
 
+
+
+model PayrollItem {
+  id String @id @default(uuid())
+
+  payrollId String
+  payroll   Payroll @relation(fields: [payrollId], references: [id])
+
+  label         String
+  type          PayrollItemType
+  amount        Float
+  description   String?
+  attachmentUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Payslip {
+  id String @id @default(uuid())
+
+  payrollId String  @unique
+  payroll   Payroll @relation(fields: [payrollId], references: [id])
+
+  fileUrl     String? // URL to the generated payslip PDF
+  generatedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Master data defination layer
+model PayrollComponentMaster {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  name        String
+  type        PayrollItemType
+  valueType   PayStructureValueType
+  defaultValue Float? // used if valueType is COMPANY_FIXED or EMPLOYEE_FIXED
+
+  isOptional    Boolean @default(false)
+  isTaxable    Boolean @default(false)
+  isActive     Boolean @default(true)
+
+  includeInPayroll Boolean @default(true)
+  allowAttendanceLink Boolean @default(false)
+  allowLeaveLink   Boolean @default(false)
+  frequency        PayrollComponentFreq?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payStructureComponents PayStructureComponent[]
+  employeePayrollComponents employeePayrollComponent[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, type, isActive])
+}
+
 model PayStructureComponent {
   id String @id @default(uuid())
 
   payStructureId String
   payStructure   PayStructure @relation(fields: [payStructureId], references: [id])
 
-  label              String
-  type               PayStructureCompType
-  valueType          PayStructureValueType
-  value              Float // if percentage, value is % of basic, if flat, it's fixed amount
-  isTaxable          Boolean               @default(false)
-  attachmentRequired Boolean               @default(false)
+  payrollMasterComponentId String
+  payrollMasterComponent   PayrollComponentMaster @relation(fields: [payrollMasterComponentId], references: [id])
+
+  valueType PayStructureValueType
+  value     Float? // if valueType is PERCENTAGE_OF_BASIC, this represents the percentage
+  isActive  Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([payStructureId, payrollMasterComponentId])
+  @@index([payrollMasterComponentId, isActive])
+  @@index([payStructureId, isActive])
+}
+
+model employeePayrollComponent {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  payrollMasterComponentId String
+  payrollMasterComponent   PayrollComponentMaster @relation(fields: [payrollMasterComponentId], references: [id])
+
+  valueType PayStructureValueType
+  value     Float // if valueType is PERCENTAGE_OF_BASIC, this represents the percentage
+  isActive  Boolean @default(true)
+  remarks  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, payrollMasterComponentId])
+  @@index([payrollMasterComponentId, isActive])
 }
 
 model Payroll {
@@ -867,33 +965,4 @@ model Payroll {
 
   @@unique([tenantId, userId, month, year])
   @@index([tenantId, userId, month, year])
-}
-
-model PayrollItem {
-  id String @id @default(uuid())
-
-  payrollId String
-  payroll   Payroll @relation(fields: [payrollId], references: [id])
-
-  label         String
-  type          PayrollItemType
-  amount        Float
-  description   String?
-  attachmentUrl String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Payslip {
-  id String @id @default(uuid())
-
-  payrollId String  @unique
-  payroll   Payroll @relation(fields: [payrollId], references: [id])
-
-  fileUrl     String? // URL to the generated payslip PDF
-  generatedAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }

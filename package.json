@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx --watch -r tsconfig-paths/register src/server.ts",
     "build": "tsc",
-    "start": "node -r tsconfig-paths/register dist/server.js"
+    "start": "node -r tsconfig-paths/register dist/server.js",
+
+    "postinstall": "npx puppeteer browsers install chrome"
   },
   "keywords": [],
   "author": "Soumalya-Chakraborty",
@@ -39,9 +41,11 @@
     "date-holidays": "^3.26.12",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "handlebars": "^4.7.9",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",
+    "puppeteer": "^24.40.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^13.0.0",

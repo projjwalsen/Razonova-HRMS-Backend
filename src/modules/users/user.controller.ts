@@ -260,6 +260,7 @@ export const getUserDetails = async (req: Request, res: Response) => {
     }
 }
 
+/* ----------------------- User Editable Only ----------------------------- */
 
 /**
  * @swagger
@@ -283,26 +284,54 @@ export const getUserDetails = async (req: Request, res: Response) => {
  *           schema:
  *             type: object
  *             properties:
- *               name: { type: string }
- *               phone: { type: string }
- *               departmentId: { type: string }
- *               designationId: { type: string }
- *               managerId: { type: string }
- *               isActive: { type: boolean }
- *               employeeCode: { type: string }
+ *               name:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               departmentId:
+ *                 type: string
+ *               designationId:
+ *                 type: string
+ *               managerId:
+ *                 type: string
+ *               isActive:
+ *                 type: boolean
+ *               employeeCode:
+ *                 type: string
  *               employmentType:
  *                 type: string
- *                 enum: [FULL_TIME, TRAINEE, INTERN, CONTRACT, OTHER]
- *               joiningDate: { type: string, format: date }
- *               probationMonths: { type: number }
- *               salary: { type: number }
- *               dateOfBirth: { type: string, format: date }
- *               addressLine1: { type: string }
- *               addressLine2: { type: string }
- *               city: { type: string }
- *               state: { type: string }
- *               country: { type: string }
- *               pinCode: { type: string }
+ *                 enum:
+ *                   - FULL_TIME
+ *                   - TRAINEE
+ *                   - INTERN
+ *                   - CONTRACT
+ *                   - OTHER
+ *               joiningDate:
+ *                 type: string
+ *                 format: date
+ *               probationMonths:
+ *                 type: number
+ *               salary:
+ *                 type: number
+ *               dateOfBirth:
+ *                 type: string
+ *                 format: date
+ *               addressLine1:
+ *                 type: string
+ *               addressLine2:
+ *                 type: string
+ *               city:
+ *                 type: string
+ *               state:
+ *                 type: string
+ *               country:
+ *                 type: string
+ *               pinCode:
+ *                 type: string
+ *               panNumber:
+ *                 type: string
+ *               aadhaarNumber:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Employee updated successfully
@@ -315,7 +344,94 @@ export const getUserDetails = async (req: Request, res: Response) => {
  *       500:
  *         description: Failed to update user
  */
-export const updateUser = async (req: Request, res: Response) => {
+export const updateMyProfile = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+
+        const {
+            name,
+            phone,
+            dateOfBirth,
+            addressLine1,
+            addressLine2,
+            city,
+            state,
+            country,
+            pinCode,
+            panNumber,
+            aadhaarNumber
+        } = req.body;
+
+        const targetUser = await prisma.user.findUnique({
+            where: { id: actor.id },
+            include: {
+                employeeProfile: true
+            }
+        });
+
+        if (!targetUser) {
+            return res.status(404).json({
+                status: false,
+                message: "User not found"
+            });
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+            const updatedUser = await tx.user.update({
+                where: { id: actor.id },
+                data: {
+                    name: name ?? undefined,
+                    phone: phone ?? undefined
+                }
+            });
+
+            const updatedProfile = await tx.employeeProfile.upsert({
+                where: { userId: actor.id },
+                update: {
+                    dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+                    addressLine1: addressLine1 ?? undefined,
+                    addressLine2: addressLine2 ?? undefined,
+                    city: city ?? undefined,
+                    state: state ?? undefined,
+                    country: country ?? undefined,
+                    pinCode: pinCode ?? undefined,
+                    panNumber: panNumber ?? undefined,
+                    aadharNumber: aadhaarNumber ?? undefined
+                },
+                create: {
+                    userId: actor.id,
+                    dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+                    addressLine1: addressLine1 ?? null,
+                    addressLine2: addressLine2 ?? null,
+                    city: city ?? null,
+                    state: state ?? null,
+                    country: country ?? null,
+                    pinCode: pinCode ?? null,
+                    panNumber: panNumber ?? null,
+                    aadharNumber: aadhaarNumber ?? null
+                }
+            });
+
+            return { updatedUser, updatedProfile };
+        });
+
+        return res.status(200).json({
+            status: true,
+            message: "Profile updated successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to update profile",
+            error: error.message
+        });
+    }
+};
+
+/* ----------------------- COMPANY_ADMIN Editable Only ----------------------------- */
+
+export const adminUpdateEmployee = async (req: Request, res: Response) => {
     try {
         const actor = (req as any).user;
         const { userId } = (req as any).params;
@@ -338,7 +454,9 @@ export const updateUser = async (req: Request, res: Response) => {
             city,
             state,
             country,
-            pinCode
+            pinCode,
+            panNumber,
+            aadhaarNumber
         } = req.body;
 
         const targetUser = await prisma.user.findUnique({
@@ -405,7 +523,9 @@ export const updateUser = async (req: Request, res: Response) => {
                     city: city ?? undefined,
                     state: state ?? undefined,
                     country: country ?? undefined,
-                    pinCode: pinCode ?? undefined
+                    pinCode: pinCode ?? undefined,
+                    panNumber: panNumber ?? undefined,
+                    aadharNumber: aadhaarNumber ?? undefined
                 },
                 create: {
                     userId,
@@ -426,7 +546,9 @@ export const updateUser = async (req: Request, res: Response) => {
                     city: city ?? null,
                     state: state ?? null,
                     country: country ?? null,
-                    pinCode: pinCode ?? null
+                    pinCode: pinCode ?? null,
+                    panNumber: panNumber ?? null,
+                    aadharNumber: aadhaarNumber ?? null
                 }
             });
 
@@ -441,11 +563,13 @@ export const updateUser = async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({
             status: false,
-            message: "Failed to update user",
+            message: "Failed to update employee",
             error: error.message
         });
     }
 };
+
+
 
 /**
  * @swagger
