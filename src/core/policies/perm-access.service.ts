@@ -26,7 +26,6 @@ export class PermissionAccessPolicy extends BasePolicy {
         /* 2. Extract permission keys */
         const permissionKeys = userRoles.flatMap((ur: any) => 
             ur.role.rolePermissions.map((rolePerm: any) => {
-                if(rolePerm.permission.key) return rolePerm.permission.key;
                 return `${rolePerm.permission.module}:${rolePerm.permission.action}`;
             })
         );

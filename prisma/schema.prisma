@@ -71,6 +71,8 @@ model Role {
   onboardingInvites         OnboardingInvite[]
   leaveApprovalPolicyLevels LeaveApprovalPolicyLevel[]
 
+  isActive Boolean @default(true)
+
   @@unique([name, tenantId]) // Ensure role names are unique within a tenant
 }
 

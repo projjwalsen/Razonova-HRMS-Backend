@@ -38,6 +38,7 @@ export const createRole = async(req: Request, res: Response) => {
         const actor = (req as any).user;
         const tenantId = (req as any).user.tenantId;
         const { name } = req.body;
+        const normalizedRoleName = String(name).toUpperCase();
 
         if(!tenantId){
             return res.status(400).json({
@@ -45,10 +46,12 @@ export const createRole = async(req: Request, res: Response) => {
                 message: "Tenant ID is required"
             })
         }
+
         /* Policy check */
         const policyDecision = await RolePolicy.canCreateRole({
             actor,
-            tenantId
+            tenantId,
+            name: normalizedRoleName
         });
         if (!policyDecision.allowed) {
             return res.status(403).json({
@@ -60,7 +63,7 @@ export const createRole = async(req: Request, res: Response) => {
         /* Create role logic here */
         const role = await prisma.role.create({
             data: {
-                name: name.toUpperCase(),
+                name: normalizedRoleName,
                 type: "TENANT",
                 tenantId
             }
@@ -221,11 +224,9 @@ export const assignPermissionsToRole = async(req: Request, res: Response) => {
             });
         }
         // * . Detect Actor type (Platform Admin or Tenant Admin) and validate role belongs to their scope
-        const isSystemUser = user.tenantId === null &&
-        (Array.isArray(user.roles) && user.roles.some((r: any) => r.type === "SYSTEM"));
+        const isSystemUser = user.tenantId === null && user.roleType === "SYSTEM";
 
-        const isOrgUser = user.tenantId !== null &&
-        (Array.isArray(user.roles) && user.roles.some((r: any) => r.type === "TENANT"));
+        const isOrgUser = user.tenantId !== null && user.roleType === "TENANT";
 
         if(!isSystemUser && !isOrgUser){
             return res.status(403).json({
@@ -256,7 +257,7 @@ export const assignPermissionsToRole = async(req: Request, res: Response) => {
         }
         /* Validate permission types based on role type */
         if(role.type === "TENANT"){
-            const isSystemPermission = permissions.some((p: any) => p.type === "SYSTEM");
+            const isSystemPermission = permissions.some((p: any) => p.scope === "SYSTEM");
             if(isSystemPermission){
                 return res.status(403).json({
                     success: false,
@@ -273,7 +274,7 @@ export const assignPermissionsToRole = async(req: Request, res: Response) => {
                 });
             }
 
-            const isTenantPermission = permissions.some((p: any) => p.type === "TENANT");
+            const isTenantPermission = permissions.some((p: any) => p.scope === "TENANT");
             if(isTenantPermission){
                 return res.status(403).json({
                     success: false,
@@ -391,7 +392,7 @@ export const assignRoleToUser = async(req: Request, res: Response) => {
             })
         }
         if(existingAssignment){
-            return res.status(404).json({
+            return res.status(409).json({
                 success: false,
                 message: "Role is already assigned to this user"
             })
@@ -406,22 +407,67 @@ export const assignRoleToUser = async(req: Request, res: Response) => {
             })
         }
         /* Assign role to user logic here */
-        const userRole = await prisma.userRole.create({
-            data: {
-                userId,
-                roleId
+        const result = await prisma.$transaction(async (tx) => {
+            const createdRoles: any[] = [];
+
+            // For any TENANT role other than EMPLOYEE, ensure EMPLOYEE base role exists
+            if (
+                role.type === "TENANT" &&
+                role.name !== "EMPLOYEE"
+            ) {
+                if (!targetUser.tenantId) {
+                    throw new Error("Target user is missing tenant context");
+                }
+
+                const employeeRole = await tx.role.findFirst({
+                    where: {
+                        tenantId: targetUser.tenantId,
+                        type: "TENANT",
+                        name: "EMPLOYEE"
+                    },
+                    select: { id: true, name: true }
+                });
+
+                if (!employeeRole) {
+                    throw new Error("EMPLOYEE base role not found for this tenant");
+                }
+
+                const existingEmployeeAssignment = await tx.userRole.findUnique({
+                    where: {
+                        userId_roleId: {
+                            userId,
+                            roleId: employeeRole.id
+                        }
+                    }
+                });
+
+                if (!existingEmployeeAssignment) {
+                    const employeeUserRole = await tx.userRole.create({
+                        data: {
+                            userId,
+                            roleId: employeeRole.id
+                        }
+                    });
+
+                    createdRoles.push(employeeUserRole);
+                }
             }
+
+            const assignedRole = await tx.userRole.create({
+                data: {
+                    userId,
+                    roleId: role.id
+                }
+            });
+
+            createdRoles.push(assignedRole);
+
+            return createdRoles;
         });
-        if(!userRole){
-            return res.status(400).json({
-                success: false,
-                message: "Failed to assign role to user"
-            })
-        }
         return res.status(200).json({
             success: true,
             message: "Role assigned to user successfully",
-            data: userRole
+            data: result
         })
     } catch (error: any) {
         return res.status(500).json({
@@ -492,6 +538,16 @@ export const unassignRoleFromUser = async(req: Request, res: Response) => {
                 message: "Target user or role not found"
             })
         }
+        /* -- block accidental self unassignment of COMPANY_ADMIN role -- */
+        if(actor.id === userId &&
+            role.type === "TENANT" &&
+            role.name === "COMPANY_ADMIN"
+        ){
+            return res.status(400).json({
+                success: false,
+                message: "You cannot unassign yourself from COMPANY_ADMIN role"
+            })
+        }
         const assignedRole = await prisma.userRole.findUnique({
             where: {
                 userId_roleId: {
@@ -515,7 +571,48 @@ export const unassignRoleFromUser = async(req: Request, res: Response) => {
                 message: policyDecision.message || "Unauthorized to unassign this role from user"
             })
         }
-        // Unassign role
+        // Prevent removing base EMPLOYEE role from tenant users
+        if (
+            role.type === "TENANT" &&
+            role.name === "EMPLOYEE"
+        ) {
+            const userTenantRoles = await prisma.userRole.findMany({
+                where: {
+                    userId,
+                    role: {
+                        type: "TENANT"
+                    }
+                },
+                include: {
+                    role: {
+                        select: {
+                            id: true,
+                            name: true,
+                            type: true
+                        }
+                    }
+                }
+            });
+
+            const remainingTenantRoles = userTenantRoles.filter(
+                (ur) => ur.roleId !== roleId
+            );
+
+            // If any tenant role remains, EMPLOYEE must stay
+            if (remainingTenantRoles.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: "EMPLOYEE base role cannot be removed while other tenant roles are still assigned"
+                });
+            }
+
+            // Also block removing the only tenant role
+            return res.status(400).json({
+                success: false,
+                message: "EMPLOYEE base role cannot be removed from a tenant user"
+            });
+        }
+
         await prisma.userRole.delete({
             where: {
                 userId_roleId: {
@@ -578,7 +675,7 @@ export const unassignRoleFromUser = async(req: Request, res: Response) => {
  *       500:
  *         description: Internal server error while transferring role to another user
  */
-export const transferRole = async(req: Request, res: Response) => {
+export const transferRoleToOtherUser = async(req: Request, res: Response) => {
     try {
         const actor = (req as any).user;
         const { fromUserId, toUserId, roleId } = req.body;
@@ -596,6 +693,12 @@ export const transferRole = async(req: Request, res: Response) => {
                 success: false,
                 message: "Role not found"
             })
+        }
+        if (role.type === "TENANT" && role.name === "EMPLOYEE") {
+            return res.status(400).json({
+                success: false,
+                message: "EMPLOYEE base role cannot be transferred"
+            });
         }
         // Policy check for transfer role
         const policyDecision = await RolePolicy.canTransferRole(actor, fromUserId, toUserId, role);
@@ -649,3 +752,138 @@ export const transferRole = async(req: Request, res: Response) => {
         })
     }
 }
+
+
+
+/* --- Get User Access --- */
+/**
+ * @swagger
+ * /auth/my-access:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Get current user access
+ *     description: Returns user info, roles, and permissions for frontend access control.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Access fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *                         tenantId:
+ *                           type: string
+ *                           nullable: true
+ *                         roleType:
+ *                           type: string
+ *                           example: TENANT
+ *                     roles:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["EMPLOYEE", "COMPANY_ADMIN"]
+ *                     permissions:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["PAYROLL:READ", "LEAVE:APPLY"]
+ *                     groupedPermissions:
+ *                       type: object
+ *                       additionalProperties:
+ *                         type: array
+ *                         items:
+ *                           type: string
+ *                       example:
+ *                         PAYROLL: ["READ", "READ_SELF"]
+ *                         LEAVE: ["APPLY"]
+ *       401:
+ *         description: Unauthorized
+ */
+export const getMyAccess = async (req: Request, res: Response) => {
+    try {
+        const user = (req as any).user;
+
+        if (!user?.id) {
+            return res.status(401).json({
+                status: false,
+                message: "Unauthorized"
+            });
+        }
+
+        // Fetch roles + permissions
+        const userRoles = await prisma.userRole.findMany({
+            where: { userId: user.id },
+            include: {
+                role: {
+                    include: {
+                        rolePermissions: {
+                            include: {
+                                permission: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Extract role names
+        const roles = userRoles.map((ur: any) => ur.role.name);
+
+        // Extract permission keys
+        const permissionKeys = userRoles.flatMap((ur: any) =>
+            ur.role.rolePermissions.map((rp: any) =>
+                `${rp.permission.module}:${rp.permission.action}`
+            )
+        );
+
+        const uniquePermissions = [...new Set(permissionKeys)];
+
+        // Optional: Group permissions by module (🔥 for frontend UI)
+        const groupedPermissions = uniquePermissions.reduce((acc: any, key: string) => {
+            const [module, action] = key.split(":");
+
+            if (!acc[module]) acc[module] = [];
+            acc[module].push(action);
+
+            return acc;
+        }, {});
+
+        return res.status(200).json({
+            status: true,
+            message: "User access fetched successfully",
+            data: {
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    tenantId: user.tenantId,
+                    roleType: user.roleType
+                },
+                roles,
+                permissions: uniquePermissions,
+                groupedPermissions
+            }
+        });
+
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to fetch user access",
+            error: error.message
+        });
+    }
+};

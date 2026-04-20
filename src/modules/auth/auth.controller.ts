@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { prisma } from "../../config/db/prisma";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
-import { seedTenantRoles } from "../utils/seed.roles";
+import { seedTenantRoles, syncDefaultRolePermissions } from "../utils/seed.roles";
 
 /**
  * @swagger
@@ -47,6 +47,7 @@ export const login = async (req: Request, res: Response) => {
             include: { role: true },
         });
         const roles = userRole.map((ur) => ur.role.name);
+        const roleType = userRole.some(ur => ur.role.type === "SYSTEM") ? "SYSTEM" : "TENANT";
         const token = jwt.sign(
             {
                 id: user.id,
@@ -69,6 +70,7 @@ export const login = async (req: Request, res: Response) => {
                 phone: user.phone,
                 tenantId: user.tenantId,
                 roles,
+                roleType,
                 token
             }
         })
@@ -235,6 +237,8 @@ export const signup = async (req: Request, res: Response) => {
 
             return { tenant, user };
         });
+        await seedTenantRoles(prisma, result.tenant.id);
+        await syncDefaultRolePermissions(prisma, result.tenant.id);
         // 6. Assign free plan
         const freePlan = await prisma.subscriptionPlan.findFirst({
             where: { isFree: true },
@@ -242,24 +246,24 @@ export const signup = async (req: Request, res: Response) => {
         // 🔹 Transaction 2: Tenant Setup / Provisioning
         await prisma.$transaction(async (tx) => {
             // 1. Create role
-            const adminRole = await tx.role.create({
-                data: {
-                    name: "COMPANY_ADMIN",
-                    type: "TENANT",
+            const roles = await tx.role.findMany({
+                where: {
                     tenantId: result.tenant.id,
+                    type: "TENANT",
+                    name: {
+                        in: ["COMPANY_ADMIN", "EMPLOYEE"]
+                    }
                 },
-            });
+                select: {
+                    id: true,
+                    name: true
+                }
+            })
+            const adminRole = roles.find(r => r.name === "COMPANY_ADMIN");
+            const empRole = roles.find(r => r.name === "EMPLOYEE");
 
-            // --- Assign all permissions to COMPANY_ADMIN ---
-            const allPermissions = await tx.permission.findMany();
-            if (allPermissions.length > 0) {
-                await tx.rolePermission.createMany({
-                    data: allPermissions.map((perm) => ({
-                        roleId: adminRole.id,
-                        permissionId: perm.id,
-                    })),
-                    skipDuplicates: true,
-                });
+            if(!adminRole || !empRole) {
+                throw new Error("Failed to find required roles");
             }
             // --- End permission sync ---
 
@@ -289,12 +293,12 @@ export const signup = async (req: Request, res: Response) => {
                 },
             });
 
-            // 5. Assign role
-            await tx.userRole.create({
-                data: {
-                    userId: result.user.id,
-                    roleId: adminRole.id,
-                },
+            await tx.userRole.createMany({
+                data: [
+                    { userId: result.user.id, roleId: adminRole.id },
+                    { userId: result.user.id, roleId: empRole.id }
+                ],
+                skipDuplicates: true
             });
 
 
@@ -316,7 +320,7 @@ export const signup = async (req: Request, res: Response) => {
                 name: result.user.name,
                 email: result.user.email,
                 tenantId: result.user.tenantId,
-                roles: ["COMPANY_ADMIN"],
+                roles: ["COMPANY_ADMIN", "EMPLOYEE"],
             },
             process.env.JWT_SECRET || "your_jwt_secret",
             { expiresIn: "7h" }
