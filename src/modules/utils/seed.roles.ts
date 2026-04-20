@@ -89,7 +89,3 @@ export async function syncDefaultRolePermissions(tx: any, tenantId: string) {
 
   return true;
 }
-
-export async function bootstrapTenantRBAC(tx: any, tenantId: string) {
-  
-}

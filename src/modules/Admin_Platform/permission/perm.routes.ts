@@ -12,10 +12,6 @@ router.post(
     // checkPermission("PERMISSION:CREATE"),
     permController.createPermission
 );
-router.get(
-    "/list",
-    permController.getPermissions
-);
 router.put(
     "/update/:permId", 
     // checkPermission("PERMISSION:UPDATE"),
