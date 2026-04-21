@@ -24,4 +24,9 @@ router.delete(
     permController.deletePermission
 );
 
+router.get(
+    "/list",
+    permController.getAllPermissions
+)
+
 export default router;

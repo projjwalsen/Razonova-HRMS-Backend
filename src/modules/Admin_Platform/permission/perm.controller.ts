@@ -70,6 +70,30 @@ export const createPermission = async (req: Request, res: Response) => {
     }
 }
 
+export const getAllPermissions = async (req: Request, res: Response) => {
+    try {
+        const permissions = await prisma.permission.findMany({
+            orderBy: [
+                { module: "asc" },
+                { action: "asc" }
+            ]
+        });
+
+        return res.status(200).json({
+            status: true,
+            message: "Permissions fetched successfully",
+            total: permissions.length,
+            data: permissions
+        });
+
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to fetch permissions",
+            error: (error as Error).message
+        });
+    }
+}
 
 
 /**
