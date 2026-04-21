@@ -1348,15 +1348,25 @@ export const acceptOnboardingInvite = async (req: Request, res: Response) => {
                 }
             });
 
-            if(!invite.roleId){
-                // Setting EMPLOYEE role
-                await tx.userRole.create({
-                    data: {
-                        userId: newUser.id,
-                        roleId: (employeeRole as { id: string }).id
-                    }
-                })
+            if (!employeeRole && !invite.roleId) {
+                throw new Error("Default EMPLOYEE role not found");
             }
+
+            const roleIdsToAssign = new Set<string>();
+            roleIdsToAssign.add(employeeRole!.id);
+
+            if (invite.roleId && invite.roleId !== employeeRole!.id) {
+                roleIdsToAssign.add(invite.roleId);
+            }
+
+
+            await tx.userRole.createMany({
+                data: Array.from(roleIdsToAssign).map((roleId) => ({
+                    userId: newUser.id,
+                    roleId
+                })),
+                skipDuplicates: true
+            });
             await tx.employeeProfile.create({
                 data: {
                     userId: newUser.id,

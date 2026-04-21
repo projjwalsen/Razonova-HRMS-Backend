@@ -1,30 +1,34 @@
 import { Router } from "express";
 import * as attendController from "./attend.controller";
-import { auth } from "../../core/middleware/auth";
+import { auth, checkPermission, checkTenantApproval } from "../../core/middleware/auth";
 
 const router = Router();
 
 
-router.use(auth);
+router.use(auth, checkTenantApproval);
 
 router.post(
     "/config/upsert", 
+    checkPermission("ATTENDANCE:CONFIGURE"),
     attendController.upsertAttendanceConfig
 );
 
 router.get(
     "/config", 
+    checkPermission("ATTENDANCE:CONFIGURE"),
     attendController.getAttendanceConfig
 );
 
 /****** Check In & Out  ***/
 router.post(
-    "/check-in", 
+    "/check-in",
+    checkPermission("ATTENDANCE:CHECK_IN"),
     attendController.checkIn
 );
 
 router.post(
     "/check-out", 
+    checkPermission("ATTENDANCE:CHECK_OUT"),
     attendController.checkOut
 );
 
@@ -33,11 +37,13 @@ router.post(
 // Get today's attendance for the tenant
 router.get(
     "/today",
+    checkPermission("ATTENDANCE:READ"),
     attendController.getTodaysAttendance
 )
 // Get today's attendance for a specific employee
 router.get(
     "/today/:userId",
+    checkPermission("ATTENDANCE:READ"),
     attendController.getTodaysAttendance
 )
 
@@ -45,11 +51,13 @@ router.get(
 /** ------------ Get attendance history ----------------- */
 router.get(
     "/history",
+    checkPermission("ATTENDANCE:READ"),
     attendController.getAttendanceHistory
 )
 
 router.get(
     "/history/:userId",
+    checkPermission("ATTENDANCE:READ"),
     attendController.getAttendanceHistory
 )
 
@@ -57,11 +65,13 @@ router.get(
 /**---------- Get Monthly Summary ---------------------- */
 router.get(
     "/monthly",
+    checkPermission("ATTENDANCE:READ"),
     attendController.getMonthSummary
 )
 
 router.get(
     "/monthly/:userId",
+    checkPermission("ATTENDANCE:READ"),
     attendController.getMonthSummary
 )
 

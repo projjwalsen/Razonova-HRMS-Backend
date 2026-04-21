@@ -70,52 +70,22 @@ export const createPermission = async (req: Request, res: Response) => {
     }
 }
 
-/**
- * @swagger
- * /admin/permissions/list:
- *   get:
- *     tags:
- *       - Permissions (Platform)
- *     summary: Get all permissions (platform admin)
- *     description: Platform admin fetches all permissions, grouped by module.
- *     responses:
- *       200:
- *         description: Permissions fetched successfully
- *       500:
- *         description: Failed to fetch permissions
- */
-export const getPermissions = async (req: Request, res: Response) => {
+export const getAllPermissions = async (req: Request, res: Response) => {
     try {
-        const user = (req as any).user;
-        let scopeFilter = {};
-
-        if(user.roleType === "SYSTEM"){
-            scopeFilter = { scope: "SYSTEM" };
-        }else if(user.roleType === "TENANT"){
-            scopeFilter = { scope: "TENANT" };
-        }else{
-            return res.status(403).json({
-                status: false,
-                message: "Invalid role type"
-            });
-        }
         const permissions = await prisma.permission.findMany({
-            where: scopeFilter
+            orderBy: [
+                { module: "asc" },
+                { action: "asc" }
+            ]
         });
-        /* Grouping permissions */
-        const grouped = permissions.reduce((acc: any, permission: any) => {
-            /* if not have the module create it  */
-            if(!acc[permission.module]) acc[permission.module] = [];
-            /* add the permission to the module */
-            acc[permission.module].push(permission);
-            return acc;
-        }, {});
 
         return res.status(200).json({
             status: true,
             message: "Permissions fetched successfully",
-            data: grouped
+            total: permissions.length,
+            data: permissions
         });
+
     } catch (error: any) {
         return res.status(500).json({
             status: false,
@@ -124,6 +94,7 @@ export const getPermissions = async (req: Request, res: Response) => {
         });
     }
 }
+
 
 /**
  * @swagger
