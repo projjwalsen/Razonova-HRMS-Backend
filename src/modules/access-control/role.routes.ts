@@ -26,6 +26,12 @@ router.post(
     checkPermission("ROLE:ASSIGN"),
     roleController.assignRoleToUser
 );
+
+router.get(
+    "/assigned-users",
+    roleController.getAssignedRoleUsers
+)
+
 router.delete(
     "/unassign-role", 
     checkPermission("ROLE:UNASSIGN"),

@@ -458,6 +458,47 @@ export const assignRoleToUser = async(req: Request, res: Response) => {
     }
 }
 
+export const getAssignedRoleUsers = async(req: Request, res: Response) => {
+    try {
+        const roles = await prisma.role.findMany({
+            select: {
+                id: true,
+                name: true,
+                type: true,
+                userRoles: {
+                    select: {
+                        user: true
+                    }
+                }
+            }
+        });
+
+        const data = roles.map((role) => ({
+            roleId: role.id,
+            roleName: role.name,
+            roleType: role.type,
+            totalAssigned: role.userRoles.length,
+            assignedUsers: role.userRoles.map(ur => ({
+                userId: ur.user.id,
+                userName: ur.user.name,
+                email: ur.user.email
+            }))
+        }))
+
+        return res.status(200).json({
+            success: true,
+            message: "Assigned role users retrieved successfully",
+            data
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error while retrieving assigned role users",
+            error: error.message
+        })
+    }
+}
+
 /**
  * @swagger
  * /org/roles/unassign-user:
