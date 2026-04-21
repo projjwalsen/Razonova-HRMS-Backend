@@ -23,7 +23,7 @@ const upload = createFileUpload({
 /* -------------------------------------------------------------------------- */
 
 router.post("/type",checkPermission("LEAVE_TYPE:MANAGE"), LeaveController.upsertLeaveType);
-router.get("/type",checkPermission("LEAVE_TYPE:READ"), LeaveController.getLeaveTypes);
+router.get("/type",checkPermission("LEAVE:READ"), LeaveController.getLeaveTypes);
 
 /* -------------------------------------------------------------------------- */
 /*                                LEAVE POLICY                                 */
