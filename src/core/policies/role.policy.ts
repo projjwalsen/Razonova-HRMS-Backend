@@ -166,17 +166,17 @@ export class RolePolicy extends BasePolicy{
                 "Only tenant actors can transfer roles"
             )
         }
-        if(!this.isSameTenant(
-            actor.tenantId,
-            fromUser.tenantId,
-            toUser.tenantId,
-            targetRole.tenantId
-        )){
-            return this.deny(
-                "CROSS_TENANT_ACTION",
-                 "Cannot transfer role across different tenants"
-            )
-        }
+        // if(!this.isSameTenant(
+        //     actor.tenantId,
+        //     fromUser.tenantId,
+        //     toUser.tenantId,
+        //     targetRole.tenantId
+        // )){
+        //     return this.deny(
+        //         "CROSS_TENANT_ACTION",
+        //          "Cannot transfer role across different tenants"
+        //     )
+        // }
         if(targetRole.type !== "TENANT"){
             return this.deny(
                 "INVALID_ROLE_TYPE",
