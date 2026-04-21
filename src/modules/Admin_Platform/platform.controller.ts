@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../../config/db/prisma";
-import { seedTenantRoles } from "../utils/seed.roles";
+import { seedTenantRoles, syncDefaultRolePermissions } from "../utils/seed.roles";
 
 /**
  * @swagger
@@ -138,6 +138,7 @@ export const approveTenant = async (req: Request, res: Response) => {
       });
 
       await seedTenantRoles(tx, tenantId);
+      await syncDefaultRolePermissions(tx, tenantId);
 
       return tenant;
     });

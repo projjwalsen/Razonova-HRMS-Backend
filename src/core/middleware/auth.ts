@@ -14,10 +14,41 @@ export const auth = async (req: AuthRequest, res: Response, next: NextFunction) 
             return res.status(401).json({ status: false, message: "No token provided" });
         }
         const token = authHeader.split(' ')[1]; // Get the token after 'Bearer'
-        const user = jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret");
-        if(!user){
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret");
+        if(!decoded){
             return res.status(401).json({ status: false, message: "Invalid token. Try LOGIN again !" });
         }
+
+        // Freshly fetch USER + ROLES from DB
+        const freshUser = await prisma.user.findUnique({
+            where: { id: (decoded as any).id },
+            include: {
+                userRoles: {
+                    include: {
+                        role: true
+                    }
+                }
+            }
+        });
+
+        if(!freshUser){
+            return res.status(401).json({ status: false, message: "User not found. Try LOGIN again !" });
+        }
+
+        const roles = freshUser.userRoles.map(ur => ur.role);
+
+        const roleType = roles.some(r => r.type === "SYSTEM") ? "SYSTEM" : "TENANT";
+
+        const user = {
+            id: freshUser.id,
+            email: freshUser.email,
+            tenantId: freshUser.tenantId,
+            roles,
+            roleType
+        };
+
+        console.log("Authenticated User:", user);
+
         req.user = user; // Attach the decoded user object to the request
         next(); 
 

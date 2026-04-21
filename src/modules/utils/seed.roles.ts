@@ -2,7 +2,8 @@ export async function seedTenantRoles(tx: any, tenantId: string) {
     try {
         const roles = [
             "EMPLOYEE",
-            "MANAGER"
+            "MANAGER",
+            "COMPANY_ADMIN"
         ];
         
         for (const roleName of roles) {
@@ -36,45 +37,55 @@ export async function syncDefaultRolePermissions(tx: any, tenantId: string) {
     where: { scope: "TENANT" }
   });
 
+  const rowsToInsert: Array<{ roleId: string; permissionId: string }> = [];
+
   for (const role of roles) {
     let allowed: string[] = [];
 
     if (role.name === "COMPANY_ADMIN") {
-      allowed = permissions.map((p: any) => `${p.module}.${p.action}`);
-    }
-
-    if (role.name === "MANAGER") {
+      allowed = permissions.map((p: any) => `${p.module}:${p.action}`);
+    } else if (role.name === "MANAGER") {
       allowed = permissions
         .filter((p: any) =>
-          ["EMPLOYEE", "EMPLOYEE_ONBOARDING"].includes(p.module) &&
-          ["READ", "UPDATE"].includes(p.action)
+          ["ATTENDANCE", "PAYROLL", "LEAVE", "EMPLOYEE"].includes(String(p.module)) &&
+          ["READ", "MANAGE"].includes(String(p.action))
         )
-        .map((p: any) => `${p.module}.${p.action}`);
-    }
-
-    if (role.name === "EMPLOYEE") {
+        .map((p: any) => `${p.module}:${p.action}`);
+    } else if (role.name === "EMPLOYEE") {
       allowed = [
-        "EMPLOYEE.READ",
+        "EMPLOYEE:READ",
+        "HOLIDAY_CALENDAR:READ",
+        "LEAVE:READ",
+        "LEAVE:READ_SELF",
+        "LEAVE:APPLY",
+        "ATTENDANCE:READ",
+        "ATTENDANCE:CHECK_IN",
+        "ATTENDANCE:CHECK_OUT",
+        "PAYROLL:READ_SELF",
+        "PAYROLL:PAYSLIP_PREVIEW_SELF",
+        "PAYROLL:PAYSLIP_DOWNLOAD_SELF"
       ];
+    } else {
+      continue;
     }
 
     for (const perm of permissions) {
-      const key = `${perm.module}.${perm.action}`;
+      const key = `${perm.module}:${perm.action}`;
       if (!allowed.includes(key)) continue;
 
-      await tx.rolePermission.upsert({
-        where: {
-          roleId_permissionId: {
-            roleId: role.id,
-            permissionId: perm.id
-          }
-        },
-        update: {},
-        create: {
-          roleId: role.id,
-          permissionId: perm.id
-        }
+      rowsToInsert.push({
+        roleId: role.id,
+        permissionId: perm.id
       });
     }
   }
+
+  if (rowsToInsert.length > 0) {
+    await tx.rolePermission.createMany({
+      data: rowsToInsert,
+      skipDuplicates: true
+    });
+  }
+
+  return true;
 }
