@@ -7,7 +7,7 @@ import { RolePolicy } from "../../core/policies/role.policy";
 
 /**
  * @swagger
- * /org/roles:
+ * /org/role/create:
  *   post:
  *     tags:
  *       - Roles (Organization)
@@ -104,7 +104,7 @@ export const createRole = async(req: Request, res: Response) => {
 
 /**
  * @swagger
- * /org/roles:
+ * /org/role/list-all:
  *   get:
  *     tags:
  *       - Roles (Organization)
@@ -283,39 +283,20 @@ export const assignPermissionsToRole = async(req: Request, res: Response) => {
             }
         }
 
-        const existing = await prisma.rolePermission.findMany({
-            where: { roleId },
-            select: { permissionId: true }
-        });
-        const existingPermissionIds = existing.map(ep => ep.permissionId);
-        // finding ... difference between existing and new permissions
-        const toAdd = permissionIds.filter((id: string) => !existingPermissionIds.includes(id));
-        const toRemove = existingPermissionIds.filter(id => !permissionIds.includes(id));
-
-        // ------------- $Transaction -------------------- //
-        const [deleted, created] = await prisma.$transaction([
-            // to remove -- old mapping
-            prisma.rolePermission.deleteMany({
-                where: {
-                    roleId,
-                    permissionId: { in: toRemove }
-                }
-            }),
-            // to add -- new mapping
-            prisma.rolePermission.createMany({
-                data: toAdd.map((permissionId: string) => ({
-                    roleId,
-                    permissionId
-                }))
-            })
-        ]);
+        const created = await prisma.rolePermission.createMany({
+            data: permissionIds.map((permissionId: string) => ({
+                roleId,
+                permissionId
+            })),
+            skipDuplicates: true
+        })
 
         return res.status(200).json({
             success: true,
             message: "Permissions assigned to role successfully",
             data: {
-                added: created,
-                removed: deleted
+                created,
+                createdCount: created.count
             }
         })
 
