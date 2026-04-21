@@ -460,7 +460,11 @@ export const assignRoleToUser = async(req: Request, res: Response) => {
 
 export const getAssignedRoleUsers = async(req: Request, res: Response) => {
     try {
+        const actor = (req as any).user;
         const roles = await prisma.role.findMany({
+            where: {
+                tenantId: actor.tenantId,
+            },
             select: {
                 id: true,
                 name: true,
