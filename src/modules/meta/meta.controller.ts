@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { INDUSTRIES } from "./industry.constants";
+import { CURRENCIES, INDUSTRIES } from "./industry.constants";
 import { Country, State } from "country-state-city";
 
 /**
@@ -60,3 +60,7 @@ export const getStates = (req: Request, res: Response) => {
   if (!countryCode) return res.status(400).json({ message: "countryCode required" });
   res.json(State.getStatesOfCountry(countryCode));
 };
+
+export const getCurrencies = (req: Request, res: Response) => {
+  return res.json(CURRENCIES);
+}

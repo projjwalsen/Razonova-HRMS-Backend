@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createDepartment, createDesignation, createOrganizationInfo, createOrganizationSettings, deleteDepartment, deleteDesignation, getAllDepartments, getDesignations, getOrganizationInfo, getOrganizationSettings, getPermissions, updateDepartment, updateDesignation, updateOrganizationInfo, upsertOrganizationSettings } from "./org.controller";
+import { createDepartment, createDesignation, createOrganizationInfo, createOrganizationSettings, deleteDepartment, deleteDesignation, getAllDepartments, getDesignations, getOrganizationInfo, getOrganizationSettings, getPermissions, getTenantCurrency, updateDepartment, updateDesignation, updateOrganizationInfo, upsertOrganizationSettings } from "./org.controller";
 import { auth, checkPermission } from "../../core/middleware/auth";
 import { createFileUpload } from "../../core/service/multer.service";
 import RoleRoute from "../access-control/role.routes"
@@ -103,6 +103,11 @@ router.delete(
 router.get(
     "/perm/list",
     getPermissions
+);
+
+router.get(
+    "/settings/currency",
+    getTenantCurrency
 );
 
 export default router;

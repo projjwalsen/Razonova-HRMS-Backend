@@ -107,6 +107,13 @@ model User {
   phone    String? @unique
   password String
 
+  otp      String? // for passwordless login or 2FA
+  otpExpiresAt DateTime?
+  otpAttempts Int @default(0)
+  otpRequestCount Int @default(0)
+  otpRequestWindowAt DateTime?
+  otpBlockedUntil DateTime?
+
   tenantId String?
   tenant   Tenant? @relation(fields: [tenantId], references: [id]) // COMPANY
 
