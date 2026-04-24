@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getIndustries, getCountries, getStates, getCurrencies } from "./meta.controller";
+import { getIndustries, getCountries, getStates, getCurrencies,  } from "./meta.controller";
 
 const router = Router();
 router.get("/industries", getIndustries);

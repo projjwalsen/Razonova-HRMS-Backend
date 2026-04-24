@@ -1183,8 +1183,26 @@ export const getTenantCurrency = async (req: Request, res: Response) => {
             name: "Indian Rupee"
         };
 
-        const value = setting?.value as any;
-        const currency = value?.currency ?? fallback;
+        let currency = fallback;
+
+        if (setting?.value) {
+            try {
+                const parsed =
+                typeof setting.value === "string"
+                    ? JSON.parse(setting.value)
+                    : setting.value;
+
+                if (parsed?.currency) {
+                currency = {
+                    code: parsed.currency.code ?? fallback.code,
+                    symbol: parsed.currency.symbol ?? fallback.symbol,
+                    name: parsed.currency.name ?? fallback.name
+                };
+                }
+            } catch {
+                currency = fallback;
+            }
+        }
 
         return res.status(200).json({
             status: true,

@@ -12,36 +12,33 @@ router.use("/subscription", subscriptionRoutes);
 router.use("/permission", permRoutes);
 
 /* ------ Tenant: Organizations Management 🏢 ------ */
+router.use(auth, isPlatformAdmin)
+
 router.get(
     "/organizations", 
-    auth,
-    isPlatformAdmin,
     platformController.getAllOrganizationsPlatform
 );
 
 router.get(
     "/dashboard/kpis",
-    auth,
-    isPlatformAdmin,
     platformController.getPlatformDashboardKpis
+);
+
+router.get(
+    "/organizations/users",
+    platformController.getAllOrganizationsUsers
 )
 
 router.get(
     "/departments", 
-    auth,
-    isPlatformAdmin,
     platformController.getAllDepartmentsPlatform
 );
 router.patch(
     "/tenant/approve/:tenantId", 
-    auth,
-    isPlatformAdmin,
     platformController.approveTenant
 );
 router.patch(
     "/tenant/reject/:tenantId", 
-    auth,
-    isPlatformAdmin,
     platformController.rejectTenant
 );
 
