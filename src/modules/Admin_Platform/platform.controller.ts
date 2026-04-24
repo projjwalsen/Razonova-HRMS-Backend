@@ -39,19 +39,131 @@ export const getAllOrganizationsPlatform = async (req: Request, res: Response) =
         });
     }
     const orgs = await prisma.tenant.findMany({
-      where: statusUpper ? { status: statusUpper as any } : {},
-      include: {
-        organization: true,
-        departments: true,
-        users: true,
-        _count: { select: { departments: true, users: true } }
+      where: {
+        isSystem: false,
+        ... (statusUpper ? { status: statusUpper as any } : {})
       },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        isActive: true,
+        createdAt: true,
+
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            industry: true,
+            companySize: true,
+            city: true,
+            state: true,
+            country: true,
+          },
+          take: 1
+        },
+
+        users: {
+          where: {
+            userRoles: {
+              some: {
+                role: {
+                  name: "COMPANY_ADMIN",
+                  type: "TENANT"
+                }
+              }
+            }
+          },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+          take: 1
+        },
+
+        tenantSubscription: {
+          where: {
+            isActive: true,
+          },
+          select: {
+            id: true,
+            startDate: true,
+            endDate: true,
+            plan: {
+              select: {
+                id: true,
+                name: true,
+                price: true
+              }
+            }
+          },
+          take: 1
+        },
+
+        _count: {
+          select: {
+            departments: true,
+            users: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: "desc"
+      }
     });
+
+    const data = orgs.map(org => {
+      const organization = org.organization[0] || null;
+      const admin = org.users[0] || null;
+      const subscription = org.tenantSubscription[0] || null;
+
+      return {
+        id: org.id,
+        tenantName: org.name,
+        companyName: organization?.name || org.name,
+        logoUrl: organization?.logoUrl || null,
+        industry: organization?.industry || null,
+        companySize: organization?.companySize || null,
+        city: organization?.city || null,
+        state: organization?.state || null,
+        country: organization?.country || null,
+
+        status: org.status,
+        isActive: org.isActive,
+        createdAt: org.createdAt,
+
+        companyAdmin: admin
+          ? {
+              id: admin.id,
+              name: admin.name,
+              email: admin.email,
+              phone: admin.phone,
+            }
+          : null,
+
+        subscription: subscription
+          ? {
+              id: subscription.id,
+              planId: subscription.plan.id,
+              planName: subscription.plan.name,
+              price: subscription.plan.price,
+              startDate: subscription.startDate,
+              endDate: subscription.endDate,
+            }
+          : null,
+
+        departmentsCount: org._count.departments,
+        usersCount: org._count.users,
+      }
+    })
 
     res.status(200).json({
         status: true,
         message: "Organizations fetched successfully.",
-        data: orgs
+        data
     })
   } catch (err: any) {
     res.status(500).json({ 
@@ -61,6 +173,73 @@ export const getAllOrganizationsPlatform = async (req: Request, res: Response) =
     });
   }
 };
+
+
+/* -------- DASHBOARD KPI's -------------- */
+export const getPlatformDashboardKpis = async (req: Request, res: Response) => {
+  try {
+    const [
+      totalCompanies,
+      totalUsers,
+      activeUsers,
+      pendingCompanies
+    ] = await Promise.all([
+      prisma.tenant.count({
+        where: {
+          isSystem: false,
+          status: "APPROVED"
+        }
+      }),
+
+      prisma.user.count({
+        where: {
+          tenant: {
+            isSystem: false,
+          }
+        }
+      }),
+
+      prisma.user.count({
+        where: {
+          isActive: true,
+          tenant: {
+            isSystem: false,
+          }
+        }
+      }),
+
+      prisma.tenant.count({
+        where: {
+          isSystem: false,
+          status: "PENDING"
+        }
+      })
+    ]);
+
+    return res.status(200).json({
+      status: true,
+      message: "Dashboard KPIs fetched successfully",
+      data: {
+        totalCompanies,
+        totalUsers,
+        activeUsers,
+        pendingCompanies
+      }
+    });
+
+  } catch (error: any) {
+    res.status(500).json({
+      status: false,
+      message: "An error occurred while fetching dashboard KPIs.",
+      error: error.message || "Internal Server Error"
+    });
+  }
+}
+
+
+
+
+
 
 /**
  * @swagger

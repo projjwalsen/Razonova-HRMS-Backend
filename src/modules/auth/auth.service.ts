@@ -91,27 +91,23 @@ export const resetPasswordService = async(
     otp: string, 
     newPassword: string
 ) => {
-    try {
-        const user = await prisma.user.findUnique({ where: { email } });
-        if(!user){
-            throw new Error("User not found");
-        }
-        await verifyOtpService(email, otp);
-
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                password: hashedPassword,
-                otp: null,
-                otpExpiresAt: null,
-                otpAttempts: 0
-            }
-        });
-
-        return { success: true, message: "Password reset successfully" };
-    } catch (error: any) {
-        throw new Error(error.message || "Failed to reset password");
+    const user = await prisma.user.findUnique({ where: { email } });
+    if(!user){
+        throw new Error("User not found");
     }
+    await verifyOtpService(email, otp);
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+        where: { id: user.id },
+        data: {
+            password: hashedPassword,
+            otp: null,
+            otpExpiresAt: null,
+            otpAttempts: 0
+        }
+    });
+
+    return { success: true, message: "Password reset successfully" };
 }

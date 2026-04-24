@@ -31,7 +31,7 @@ export const otpRateLimiter = async(req: Request, res: Response, next: NextFunct
         }
 
         const windowMinutes = 15;
-        const maxRequests = 3;
+        const maxRequests = 6;
         const blockMinutes = 15;
 
         const windowStart = user.otpRequestWindowAt;

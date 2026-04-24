@@ -18,6 +18,14 @@ router.get(
     isPlatformAdmin,
     platformController.getAllOrganizationsPlatform
 );
+
+router.get(
+    "/dashboard/kpis",
+    auth,
+    isPlatformAdmin,
+    platformController.getPlatformDashboardKpis
+)
+
 router.get(
     "/departments", 
     auth,
