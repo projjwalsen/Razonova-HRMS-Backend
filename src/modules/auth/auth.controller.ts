@@ -241,9 +241,7 @@ export const signup = async (req: Request, res: Response) => {
         await seedTenantRoles(prisma, result.tenant.id);
         await syncDefaultRolePermissions(prisma, result.tenant.id);
         // 6. Assign free plan
-        const freePlan = await prisma.subscriptionPlan.findFirst({
-            where: { isFree: true },
-        });
+
         // 🔹 Transaction 2: Tenant Setup / Provisioning
         await prisma.$transaction(async (tx) => {
             // 1. Create role
@@ -301,17 +299,6 @@ export const signup = async (req: Request, res: Response) => {
                 ],
                 skipDuplicates: true
             });
-
-
-            if (freePlan) {
-                await tx.tenantSubscription.create({
-                    data: {
-                        tenantId: result.tenant.id,
-                        planId: freePlan.id,
-                        startDate: new Date(),
-                    },
-                });
-            }
         });
 
         /* Generate SignIn token */
