@@ -1,10 +1,12 @@
 import { Router } from "express";
 import * as payrollController from "./payroll.controller";
 import { auth, checkPermission, checkTenantApproval } from "../../core/middleware/auth";
+import { checkSubscriptionModuleAccess } from "../../core/middleware/platform.auth";
 
 const router = Router();
 
 router.use(auth, checkTenantApproval)
+router.use(checkSubscriptionModuleAccess("PAYROLL"));
 
 /* -------------- DASHBOARD KPI's ---------------- */
 router.get(

@@ -34,7 +34,7 @@ model Tenant {
   settings           Setting[]
   departments        Department[]
   designations       Designation[]
-  tenantSubscription TenantSubscription[]
+  subscription TenantSubscription[]
   onboardingInvites  OnboardingInvite[]
   attendanceConfigs  AttendanceConfig[]
   attendances        Attendance[]
@@ -241,18 +241,42 @@ model Designation {
   @@unique([name, tenantId]) // unique designation names per tenant
 }
 
-model SubscriptionPlan {
-  id     String  @id @default(uuid())
-  name   String  @unique // e.g., Free, Basic, Pro, Enterprise
-  price  Float?
-  isFree Boolean @default(false)
-
-  maxUsers  Int? // null for unlimited
-  features  Json?
-  createdAt DateTime @default(now())
-
-  tenantSubscriptions TenantSubscription[]
+enum BillingCycle {
+  MONTHLY
+  YEARLY
 }
+
+model SubscriptionModule {
+  id String @id @default(uuid())
+
+  key String @unique
+  name String
+  description String?
+
+  isActive Boolean @default(true)
+
+  monthlyPrice Float? @default(0)
+  yearlyPrice  Float? @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  tenantSubscriptionModules TenantSubscriptionModule[]
+}
+
+
+// model SubscriptionPlan {
+//   id     String  @id @default(uuid())
+//   name   String  @unique // e.g., Free, Basic, Pro, Enterprise
+
+//   isFree   Boolean @default(false)
+
+//   isActive Boolean @default(true)
+
+//   createdAt DateTime @default(now())
+//   updatedAt DateTime @updatedAt @default(now())
+
+// }
 
 model TenantSubscription {
   id String @id @default(uuid())
@@ -260,14 +284,38 @@ model TenantSubscription {
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id])
 
-  planId String
-  plan   SubscriptionPlan @relation(fields: [planId], references: [id])
+  billingCycle BillingCycle @default(MONTHLY)
 
   startDate DateTime
   endDate   DateTime?
-  isActive  Boolean   @default(true)
 
-  @@index([tenantId, isActive])
+  isActive  Boolean   @default(true)
+  cancelledAt DateTime?
+
+  modules    TenantSubscriptionModule[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt @default(now())
+}
+
+model TenantSubscriptionModule {
+  id String @id @default(uuid())
+
+  subscriptionId String
+  subscription   TenantSubscription @relation(fields: [subscriptionId], references: [id])
+
+  moduleId String
+  module   SubscriptionModule @relation(fields: [moduleId], references: [id])
+
+  isEnabled Boolean @default(true)
+
+  monthlyPrice Float? @default(0)
+  yearlyPrice  Float? @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([subscriptionId, moduleId])
 }
 
 enum OnboardingInviteStatus {

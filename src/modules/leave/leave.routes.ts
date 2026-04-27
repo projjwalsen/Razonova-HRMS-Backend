@@ -2,10 +2,12 @@ import { Router } from "express";
 import * as LeaveController from "./leave.controller";
 import { auth, checkPermission, checkTenantApproval } from "../../core/middleware/auth";
 import { createFileUpload } from "../../core/service/multer.service";
+import { checkSubscriptionModuleAccess } from "../../core/middleware/platform.auth";
 
 const router = Router();
 
 router.use(auth, checkTenantApproval);
+router.use(checkSubscriptionModuleAccess("LEAVE"));
 
 const upload = createFileUpload({
   maxSize: 12,

@@ -84,7 +84,7 @@ export const getAllOrganizationsPlatform = async (req: Request, res: Response) =
           take: 1
         },
 
-        tenantSubscription: {
+        subscription: {
           where: {
             isActive: true,
           },
@@ -92,13 +92,6 @@ export const getAllOrganizationsPlatform = async (req: Request, res: Response) =
             id: true,
             startDate: true,
             endDate: true,
-            plan: {
-              select: {
-                id: true,
-                name: true,
-                price: true
-              }
-            }
           },
           take: 1
         },
@@ -118,7 +111,7 @@ export const getAllOrganizationsPlatform = async (req: Request, res: Response) =
     const data = orgs.map(org => {
       const organization = org.organization[0] || null;
       const admin = org.users[0] || null;
-      const subscription = org.tenantSubscription[0] || null;
+      const subscription = org.subscription[0] || null;
 
       return {
         id: org.id,
@@ -147,9 +140,6 @@ export const getAllOrganizationsPlatform = async (req: Request, res: Response) =
         subscription: subscription
           ? {
               id: subscription.id,
-              planId: subscription.plan.id,
-              planName: subscription.plan.name,
-              price: subscription.plan.price,
               startDate: subscription.startDate,
               endDate: subscription.endDate,
             }
@@ -584,6 +574,16 @@ export const getAllDepartmentsPlatform = async (req: Request, res: Response) => 
 export const approveTenant = async (req: Request, res: Response) => {
   try {
     const { tenantId } = (req as any).params;
+
+    const hasSubscription = await prisma.tenantSubscription.findFirst({
+      where: { tenantId, isActive: true }
+    });
+    if(!hasSubscription){
+      return res.status(400).json({
+        status: false,
+        message: "Cannot approve tenant without an active subscription. Please ensure the tenant has an active subscription before approval."
+      });
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.update({

@@ -1,202 +1,94 @@
 import { Request, Response } from "express";
-import { prisma } from "../../../config/db/prisma";
-import { featureSchema } from "../../utils/zod";
+import { SubscriptionService } from "./subscription.service";
 
 /**
  * @swagger
- * /admin/subscription:
+ * /platform/subscription/modules/upsert:
  *   post:
  *     tags:
- *       - subscription
- *     summary: Create a subscription plan (platform admin)
- *     description: Platform admin creates a new subscription plan. Features must be provided as a JSON object with feature keys and values.
+ *       - Subscription
+ *     summary: Create or update a subscription module
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - key
+ *               - name
  *             properties:
+ *               key:
+ *                 type: string
+ *                 example: PAYROLL
  *               name:
  *                 type: string
- *                 description: Plan name (e.g., Free, Pro, Enterprise)
- *               price:
- *                 type: number
- *                 description: Plan price
- *               isFree:
- *                 type: boolean
- *                 description: Is this a free plan?
- *               maxUsers:
- *                 type: integer
- *                 description: Maximum users allowed
- *               features:
- *                 type: object
- *                 description: Features JSON. Keys are feature names, values are objects with enabled and max.
- *                 example:
- *                   EMPLOYEE:
- *                     enabled: true
- *                     max: 100
- *                   ATTENDANCE:
- *                     enabled: false
- *     responses:
- *       201:
- *         description: Subscription plan created successfully
- *       400:
- *         description: Invalid features format or creation failed
- *       401:
- *         description: Unauthorized access
- *       500:
- *         description: Internal server error
- */
-export const createPlatformSubscription = async (req: Request, res: Response) => {
-    try {
-        const {
-            name, price, isFree, maxUsers, features
-        } = req.body;
-
-        const parsedFeatures = featureSchema.safeParse(features);
-        if (!parsedFeatures.success) {
-            return res.status(400).json({
-                status: false,
-                message: "Invalid features format",
-            });
-        }
-        /* Creating plan */
-        const plan = await prisma.subscriptionPlan.create({
-            data: {
-                name,
-                price,
-                isFree,
-                maxUsers,
-                features: parsedFeatures.data  //JSON   
-            }
-        });
-        if(!plan){
-            return res.status(400).json({
-                status: false,
-                message: "Failed to create subscription plan"
-            });
-        }
-        return res.status(201).json({
-            status: true,
-            message: "Subscription plan created successfully",
-            data: plan
-        });
-    } catch (error: any) {
-        return res.status(500).json({
-            status: false,
-            message: "Failed to create subscription",
-            error: (error as Error).message
-        });
-    }
-}
-
-/**
- * @swagger
- * /admin/subscription/{id}:
- *   patch:
- *     tags:
- *       - subscription
- *     summary: Update a subscription plan (platform admin)
- *     description: Platform admin updates an existing subscription plan. Features must be provided as a JSON object with feature keys and values. Only provided keys will be updated; others remain unchanged.
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: Subscription plan ID
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:
+ *                 example: Payroll Management
+ *               description:
  *                 type: string
- *               price:
- *                 type: number
- *               isFree:
+ *                 example: Payroll processing and payslip management
+ *               isActive:
  *                 type: boolean
- *               maxUsers:
- *                 type: integer
- *               features:
- *                 type: object
- *                 description: Features JSON. Keys are feature names, values are objects with enabled and max.
- *                 example:
- *                   EMPLOYEE:
- *                     enabled: true
- *                     max: 200
- *                   ATTENDANCE:
- *                     enabled: true
+ *                 example: true
+ *               monthlyPrice:
+ *                 type: number
+ *                 example: 199
+ *               yearlyPrice:
+ *                 type: number
+ *                 example: 1999
  *     responses:
  *       200:
- *         description: Subscription plan updated successfully
+ *         description: Subscription module upserted successfully
  *       400:
- *         description: Invalid features format or update failed
- *       401:
- *         description: Unauthorized access
- *       404:
- *         description: Subscription plan not found
+ *         description: Module key is required
  *       500:
- *         description: Internal server error
+ *         description: Failed to upsert subscription module
  */
-export const updatePlatformSubscription = async (req: Request, res: Response) => {
+export const upsertSubcriptionModule = async (req: Request, res: Response) => {
     try {
-        const { id } = (req as any).params;
         const {
-            name, price, isFree, maxUsers, features
+        key,
+        name,
+        description,
+        isActive,
+        monthlyPrice,
+        yearlyPrice,
         } = req.body;
 
-        const existingPlan = await prisma.subscriptionPlan.findUnique({ where: { id } });
-        if (!existingPlan) {
-            return res.status(404).json({
-                status: false,
-                message: "Subscription plan not found"
-            });
-        }
-        
-        const mergedFeatures = {
-            ...(typeof existingPlan.features === "object" && existingPlan.features !== null ? existingPlan.features : {}),
-            ...(typeof features === "object" && features !== null ? features : {})
-        };
-        const parsedFeatures = featureSchema.safeParse(mergedFeatures);
-        if (!parsedFeatures.success) {
+        if (!key || !key.trim()) {
             return res.status(400).json({
                 status: false,
-                message: "Invalid features format",
-                error: parsedFeatures.error.message
+                message: "Module key is required"
             });
         }
-        const plan = await prisma.subscriptionPlan.update({
-            where: { id },
-            data: {
-                name,
-                price,
-                isFree,
-                maxUsers,
-                features: parsedFeatures.data  //JSON
-            }
+
+        const result = await SubscriptionService.upsertSubscriptionModule({
+            key: key.trim(),
+            name,
+            description,
+            isActive,
+            monthlyPrice,
+            yearlyPrice
         });
 
-        if (!plan) {
+        if(!result){
             return res.status(404).json({
                 status: false,
-                message: "Subscription plan not found"
+                message: "Subscription module not found",
             });
         }
 
         return res.status(200).json({
             status: true,
-            message: "Subscription plan updated successfully",
-            data: plan
-        });
-
+            message: "Subscription module upserted successfully",
+            data: result
+         });
     } catch (error: any) {
         return res.status(500).json({
             status: false,
-            message: "Failed to update subscription",
+            message: "Failed to upsert subscription module",
             error: (error as Error).message
         });
     }
@@ -204,32 +96,31 @@ export const updatePlatformSubscription = async (req: Request, res: Response) =>
 
 /**
  * @swagger
- * /admin/subscription:
+ * /platform/subscription/modules:
  *   get:
  *     tags:
- *       - subscription
- *     summary: Get all subscription plans (platform admin)
- *     description: Retrieve all subscription plans created by platform admin.
+ *       - Subscription
+ *     summary: Get all active subscription modules
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Subscription plans retrieved successfully
- *       401:
- *         description: Unauthorized access
+ *         description: Subscription modules fetched successfully
  *       500:
- *         description: Internal server error
+ *         description: Failed to fetch subscription modules
  */
-export const getAllPlatformSubscriptions = async (req: Request, res: Response) => {
+export const getAllSubscriptionModules = async (req: Request, res: Response) => {
     try {
-        const plans = await prisma.subscriptionPlan.findMany();
+        const result = await SubscriptionService.getSubscriptionModules();
         return res.status(200).json({
             status: true,
-            message: "Subscription plans retrieved successfully",
-            data: plans
+            message: "Subscription modules fetched successfully",
+            data: result
         });
     } catch (error: any) {
         return res.status(500).json({
             status: false,
-            message: "Failed to retrieve subscription plans",
+            message: "Failed to fetch subscription modules",
             error: (error as Error).message
         });
     }
@@ -237,48 +128,369 @@ export const getAllPlatformSubscriptions = async (req: Request, res: Response) =
 
 /**
  * @swagger
- * /admin/subscription/{id}:
- *   delete:
+ * /platform/subscription/assign-modules:
+ *   post:
  *     tags:
- *       - subscription
- *     summary: Delete a subscription plan (platform admin)
- *     description: Platform admin deletes a subscription plan by ID.
- *     parameters:
- *       - in: path
- *         name: id
- *         schema:
- *           type: string
- *         required: true
- *         description: Subscription plan ID
+ *       - Subscription
+ *     summary: Assign subscription modules to a tenant
+ *     description: Creates a new active subscription for a tenant and assigns selected modules.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - tenantId
+ *               - billingCycle
+ *               - startDate
+ *               - endDate
+ *               - modules
+ *             properties:
+ *               tenantId:
+ *                 type: string
+ *                 example: tenant_uuid
+ *               billingCycle:
+ *                 type: string
+ *                 enum: [MONTHLY, YEARLY]
+ *                 example: MONTHLY
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *                 example: 2026-04-27
+ *               endDate:
+ *                 type: string
+ *                 format: date
+ *                 example: 2026-05-26
+ *               modules:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - moduleKey
+ *                   properties:
+ *                     moduleKey:
+ *                       type: string
+ *                       example: PAYROLL
+ *                     isEnabled:
+ *                       type: boolean
+ *                       example: true
  *     responses:
  *       200:
- *         description: Subscription plan deleted successfully
- *       401:
- *         description: Unauthorized access
+ *         description: Modules assigned to tenant successfully
+ *       400:
+ *         description: Required fields missing
  *       404:
- *         description: Subscription plan not found
+ *         description: Failed to assign modules to tenant
  *       500:
- *         description: Internal server error
+ *         description: Failed to assign modules to tenant
  */
-export const deletePlatformSubscription = async (req: Request, res: Response) => {
+export const assignModulesToTenant = async (req: Request, res: Response) => {
     try {
-        const { id } = (req as any).params;
-        const existingPlan = await prisma.subscriptionPlan.findUnique({ where: { id } });
-        if (!existingPlan) {
-            return res.status(404).json({
+        const {
+            tenantId,
+            billingCycle,
+            startDate,
+            endDate,
+            modules
+        } = req.body;
+
+        if(!tenantId || !billingCycle || !startDate || !endDate || !modules || !Array.isArray(modules) || modules.length === 0){
+            return res.status(400).json({
                 status: false,
-                message: "Subscription plan not found"
+                message: "tenantId, billingCycle, startDate, endDate and modules (non-empty array) are required"
             });
         }
-        await prisma.subscriptionPlan.delete({ where: { id } });
+
+        const result = await SubscriptionService.assignModulesToTenant({
+            tenantId,
+            billingCycle,
+            startDate: startDate ? new Date(startDate): undefined,
+            endDate: endDate ? new Date(endDate): undefined,
+            modules
+        });
+
+        if(!result){
+            return res.status(404).json({
+                status: false,
+                message: "Failed to assign modules to tenant. Please check if tenant and modules exist.",
+            });
+        }
+
         return res.status(200).json({
             status: true,
-            message: "Subscription plan deleted successfully"
+            message: "Modules assigned to tenant successfully",
+            data: result
         });
     } catch (error: any) {
         return res.status(500).json({
             status: false,
-            message: "Failed to delete subscription",
+            message: "Failed to assign modules to tenant",
+            error: (error as Error).message
+        });
+    }
+}
+
+/**
+ * @swagger
+ * /platform/subscription/update/modules/{tenantId}:
+ *   patch:
+ *     tags:
+ *       - Subscription
+ *     summary: Update enabled/disabled modules for tenant subscription
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Tenant ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - modules
+ *             properties:
+ *               modules:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - moduleKey
+ *                     - isEnabled
+ *                   properties:
+ *                     moduleKey:
+ *                       type: string
+ *                       example: ATTENDANCE
+ *                     isEnabled:
+ *                       type: boolean
+ *                       example: false
+ *     responses:
+ *       200:
+ *         description: Tenant subscription modules updated successfully
+ *       400:
+ *         description: tenantId or modules missing
+ *       404:
+ *         description: Failed to update tenant subscription modules
+ *       500:
+ *         description: Failed to update tenant subscription modules
+ */
+export const updateTenantSubscriptionModules = async (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params as { tenantId: string };
+        const { modules } = req.body;
+
+        if(!tenantId){
+            return res.status(400).json({
+                status: false,
+                message: "tenantId is required in params"
+            });
+        }
+        if(modules.length === 0 || !Array.isArray(modules)){
+            return res.status(400).json({
+                status: false,
+                message: "modules (non-empty array) is required in body"
+            });
+        }
+
+        const result = await SubscriptionService.updateTenantSubscriptionModules({tenantId, modules});
+
+        if(!result){
+            return res.status(404).json({
+                status: false,
+                message: "Failed to update tenant subscription modules. Please check if tenant and modules exist.",
+            });
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: "Tenant subscription modules updated successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to update tenant subscription modules",
+            error: (error as Error).message
+        });
+    }
+}
+
+
+/**
+ * @swagger
+ * /platform/subscription/active-subscription/{tenantId}:
+ *   get:
+ *     tags:
+ *       - Subscription
+ *     summary: Get active subscription details of a tenant
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Tenant ID
+ *     responses:
+ *       200:
+ *         description: Tenant subscription details fetched successfully
+ *       400:
+ *         description: tenantId is required
+ *       404:
+ *         description: Tenant not found
+ *       500:
+ *         description: Failed to fetch tenant subscription details
+ */
+export const getTenantSubscriptionDetails = async (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params as { tenantId: string };
+
+        if(!tenantId){
+            return res.status(400).json({
+                status: false,
+                message: "tenantId is required"
+            });
+        }
+
+        const result = await SubscriptionService.getTenantActiveSubscriptions(tenantId);
+        if(!result){
+            return res.status(404).json({
+                status: false,
+                message: "Tenant not found",
+            });
+        }
+        return res.status(200).json({
+            status: true,
+            message: "Tenant subscription details fetched successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to fetch tenant subscription details",
+            error: (error as Error).message
+        });
+    }
+}
+
+/**
+ * @swagger
+ * /platform/subscription/subscribed-tenants:
+ *   get:
+ *     tags:
+ *       - Subscription
+ *     summary: Get all subscribed tenants
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [ACTIVE, EXPIRED, CANCELLED]
+ *         description: Optional subscription status filter
+ *     responses:
+ *       200:
+ *         description: Subscribed tenants fetched successfully
+ *       500:
+ *         description: Failed to fetch subscribed tenants
+ */
+export const getSubscribedTenants = async (req: Request, res: Response) => {
+  try {
+    const { status } = req.query;
+
+    const result = await SubscriptionService.getSubscribedTenants({
+      status: status as any
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: "Subscribed tenants fetched successfully",
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: error.message || "Failed to fetch subscribed tenants"
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /platform/subscription/tenant/cancel-subscription/{tenantId}/{subscriptionId}:
+ *   patch:
+ *     tags:
+ *       - Subscription
+ *     summary: Cancel tenant subscription
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: tenantId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Tenant ID
+ *       - in: path
+ *         name: subscriptionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Subscription ID
+ *     responses:
+ *       200:
+ *         description: Subscription cancelled successfully
+ *       400:
+ *         description: tenantId and subscriptionId are required
+ *       404:
+ *         description: Subscription not found
+ *       500:
+ *         description: Failed to cancel tenant subscription
+ */
+export const cancelTenantSubscription = async (req: Request, res: Response) => {
+    try {
+        const { tenantId, subscriptionId } = req.params as { tenantId: string; subscriptionId: string };
+
+        if(!tenantId || !subscriptionId){
+            return res.status(400).json({
+                status: false,
+                message: "tenantId and subscriptionId are required in params"
+            });
+        }
+
+        const result = await SubscriptionService.cancelSubscription({
+            tenantId,
+            subscriptionId
+        });
+
+        if(!result){
+            return res.status(404).json({
+                status: false,
+                message: "Failed to cancel subscription. Please check if tenant and subscription exist.",
+            });
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: "Subscription cancelled successfully",
+            data: result
+        });
+        
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to cancel tenant subscription",
             error: (error as Error).message
         });
     }
