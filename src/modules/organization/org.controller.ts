@@ -1126,3 +1126,93 @@ export const getPermissions = async (req: Request, res: Response) => {
         });
     }
 }
+
+
+/**
+ * @swagger
+ * /org/settings/currency:
+ *   get:
+ *     tags:
+ *       - organization
+ *     summary: Get tenant currency
+ *     description: Retrieve the configured currency for the current tenant. Returns a fallback currency if no setting exists.
+ *     responses:
+ *       200:
+ *         description: Tenant currency fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     code:
+ *                       type: string
+ *                       example: INR
+ *                     symbol:
+ *                       type: string
+ *                       example: "₹"
+ *                     name:
+ *                       type: string
+ *                       example: Indian Rupee
+ *       500:
+ *         description: Failed to fetch tenant currency
+ */
+export const getTenantCurrency = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const tenantId = actor?.tenantId;
+
+        const setting = await prisma.setting.findUnique({
+            where: {
+                tenantId_key: {
+                    tenantId,
+                    key: "general"
+                }
+            }
+        });
+
+        const fallback = {
+            code: "INR",
+            symbol: "₹",
+            name: "Indian Rupee"
+        };
+
+        let currency = fallback;
+
+        if (setting?.value) {
+            try {
+                const parsed =
+                typeof setting.value === "string"
+                    ? JSON.parse(setting.value)
+                    : setting.value;
+
+                if (parsed?.currency) {
+                currency = {
+                    code: parsed.currency.code ?? fallback.code,
+                    symbol: parsed.currency.symbol ?? fallback.symbol,
+                    name: parsed.currency.name ?? fallback.name
+                };
+                }
+            } catch {
+                currency = fallback;
+            }
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: "Tenant currency fetched successfully",
+            data: currency
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: error.message || "Failed to fetch tenant currency"
+        });
+    }
+};

@@ -39,19 +39,121 @@ export const getAllOrganizationsPlatform = async (req: Request, res: Response) =
         });
     }
     const orgs = await prisma.tenant.findMany({
-      where: statusUpper ? { status: statusUpper as any } : {},
-      include: {
-        organization: true,
-        departments: true,
-        users: true,
-        _count: { select: { departments: true, users: true } }
+      where: {
+        isSystem: false,
+        ... (statusUpper ? { status: statusUpper as any } : {})
       },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        isActive: true,
+        createdAt: true,
+
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            industry: true,
+            companySize: true,
+            city: true,
+            state: true,
+            country: true,
+          },
+          take: 1
+        },
+
+        users: {
+          where: {
+            userRoles: {
+              some: {
+                role: {
+                  name: "COMPANY_ADMIN",
+                  type: "TENANT"
+                }
+              }
+            }
+          },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+          take: 1
+        },
+
+        subscription: {
+          where: {
+            isActive: true,
+          },
+          select: {
+            id: true,
+            startDate: true,
+            endDate: true,
+          },
+          take: 1
+        },
+
+        _count: {
+          select: {
+            departments: true,
+            users: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: "desc"
+      }
     });
+
+    const data = orgs.map(org => {
+      const organization = org.organization[0] || null;
+      const admin = org.users[0] || null;
+      const subscription = org.subscription[0] || null;
+
+      return {
+        id: org.id,
+        tenantName: org.name,
+        companyName: organization?.name || org.name,
+        logoUrl: organization?.logoUrl || null,
+        industry: organization?.industry || null,
+        companySize: organization?.companySize || null,
+        city: organization?.city || null,
+        state: organization?.state || null,
+        country: organization?.country || null,
+
+        status: org.status,
+        isActive: org.isActive,
+        createdAt: org.createdAt,
+
+        companyAdmin: admin
+          ? {
+              id: admin.id,
+              name: admin.name,
+              email: admin.email,
+              phone: admin.phone,
+            }
+          : null,
+
+        subscription: subscription
+          ? {
+              id: subscription.id,
+              startDate: subscription.startDate,
+              endDate: subscription.endDate,
+            }
+          : null,
+
+        departmentsCount: org._count.departments,
+        usersCount: org._count.users,
+      }
+    })
 
     res.status(200).json({
         status: true,
         message: "Organizations fetched successfully.",
-        data: orgs
+        data
     })
   } catch (err: any) {
     res.status(500).json({ 
@@ -61,6 +163,348 @@ export const getAllOrganizationsPlatform = async (req: Request, res: Response) =
     });
   }
 };
+
+
+/* -------- DASHBOARD KPI's -------------- */
+/**
+ * @swagger
+ * /admin/dashboard/kpis:
+ *   get:
+ *     tags:
+ *       - Dashboard (Platform)
+ *     summary: Get platform dashboard KPIs
+ *     description: Returns high-level platform metrics — total companies, total users, active users, and pending company approvals.
+ *     responses:
+ *       200:
+ *         description: Dashboard KPIs fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     totalCompanies:
+ *                       type: integer
+ *                       example: 42
+ *                     totalUsers:
+ *                       type: integer
+ *                       example: 310
+ *                     activeUsers:
+ *                       type: integer
+ *                       example: 275
+ *                     pendingCompanies:
+ *                       type: integer
+ *                       example: 5
+ *       500:
+ *         description: Internal server error
+ */
+export const getPlatformDashboardKpis = async (req: Request, res: Response) => {
+  try {
+    const [
+      totalCompanies,
+      totalUsers,
+      activeUsers,
+      pendingCompanies
+    ] = await Promise.all([
+      prisma.tenant.count({
+        where: {
+          isSystem: false,
+          status: "APPROVED"
+        }
+      }),
+
+      prisma.user.count({
+        where: {
+          tenant: {
+            isSystem: false,
+          }
+        }
+      }),
+
+      prisma.user.count({
+        where: {
+          isActive: true,
+          tenant: {
+            isSystem: false,
+          }
+        }
+      }),
+
+      prisma.tenant.count({
+        where: {
+          isSystem: false,
+          status: "PENDING"
+        }
+      })
+    ]);
+
+    return res.status(200).json({
+      status: true,
+      message: "Dashboard KPIs fetched successfully",
+      data: {
+        totalCompanies,
+        totalUsers,
+        activeUsers,
+        pendingCompanies
+      }
+    });
+
+  } catch (error: any) {
+    res.status(500).json({
+      status: false,
+      message: "An error occurred while fetching dashboard KPIs.",
+      error: error.message || "Internal Server Error"
+    });
+  }
+}
+
+
+/* -------- Gets all companies users ------------- */
+/**
+ * @swagger
+ * /platform/organizations/users:
+ *   get:
+ *     summary: Get users grouped by company
+ *     description: Platform admin API to list users from all non-system companies, grouped company-wise.
+ *     tags:
+ *       - Platform
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [all, admins, employees]
+ *           default: all
+ *         description: Filter users by role type. admins = COMPANY_ADMIN only, employees = excludes COMPANY_ADMIN.
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, APPROVED, REJECTED]
+ *         description: Filter companies by tenant approval status.
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search users by name, email, or phone.
+ *     responses:
+ *       200:
+ *         description: Organization users fetched successfully.
+ *       400:
+ *         description: Invalid user or invalid filter.
+ *       500:
+ *         description: Internal server error.
+ */
+export const getAllOrganizationsUsers = async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    if(!actor.id){
+      return res.status(400).json({
+        status: false,
+        message: "Invalid user."
+      });
+    }
+
+    const {
+      type = "all", // all | admins | employees
+      status,
+      search,
+      page = "1",
+      limit = "10"
+    } = req.query;
+
+    const statusUpper = (status as string)?.toUpperCase();
+    if(
+      statusUpper && 
+      !["PENDING", "APPROVED", "REJECTED"].includes(statusUpper)
+    ){
+      return res.status(400).json({
+        status: false,
+        message: "Invalid status filter. Allowed values are PENDING, APPROVED, REJECTED."
+      });
+    }
+
+    if(!["all", "admins", "employees"].includes(type as string)){
+      return res.status(400).json({
+        status: false,
+        message: "Invalid type filter. Allowed values are all, admins, employees."
+      });
+    }
+
+    const whereClause: any = {};
+
+    if(search && typeof search === "string"){
+      whereClause.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+        { phone: { contains: search, mode: "insensitive" } },
+      ]
+    }
+
+    if(type === "admins"){
+      whereClause.userRoles = {
+        some: {
+          role: {
+            name: "COMPANY_ADMIN",
+            type: "TENANT"
+          }
+        }
+      }
+    }
+
+    if(type === "employees"){
+      whereClause.NOT = {
+        userRoles: {
+          some: {
+            role: {
+              name: "COMPANY_ADMIN",
+              type: "TENANT"
+            }
+          }
+        }
+      }
+    }
+
+    const companies = await prisma.tenant.findMany({
+      where: {
+        isSystem: false,
+        ... (statusUpper ? { status: statusUpper as any } : {})
+      },
+      orderBy: {
+        createdAt: "desc"
+      },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        isActive: true,
+
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            industry: true,
+            companySize: true,
+          },
+          take: 1
+        },
+
+        users: {
+          where: whereClause,
+          orderBy: {
+            createdAt: "desc"
+          },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            isActive: true,
+            createdAt: true,
+
+            department: {
+              select: {
+                id: true,
+                name: true
+              }
+            },
+            designation: {
+              select: {
+                id: true,
+                name: true
+              }
+            },
+            userRoles: {
+              select: {
+                role: {
+                  select: {
+                    id: true,
+                    name: true,
+                    type: true
+                  }
+                }
+              }
+            }
+          }
+        },
+        _count: {
+          select: {
+            users: true
+          }
+        }
+      }
+    });
+
+
+    const data = companies.map(company => {
+      const organization = company.organization[0] || null;
+
+      return {
+        company : {
+          id: company.id,
+          tenantName: company.name,
+          companyName: organization?.name || company.name,
+          logoUrl: organization?.logoUrl || null,
+          industry: organization?.industry || null,
+          status: company.status,
+          isActive: company.isActive,
+          totalUsers: company._count.users
+        },
+
+        users: company.users.map((user) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          isActive: user.isActive,
+          createdAt: user.createdAt,
+
+          department: user.department
+          ? {
+              id: user.department.id,
+              name: user.department.name
+            }
+          : null,
+          
+          designations: user.designation
+          ? {
+              id: user.designation.id,
+              name: user.designation.name
+            }
+          : null,
+          
+          roles: user.userRoles.map(ur => ({
+            id: ur.role.id,
+            name: ur.role.name,
+            type: ur.role.type
+          })),
+        }))
+      }
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: "Organization users fetched successfully.",
+      data
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      status: false,
+      message: "An error occurred while fetching organization users.",
+      error: error.message || "Internal Server Error"
+    });
+  }
+}
+
+
 
 /**
  * @swagger
@@ -130,6 +574,16 @@ export const getAllDepartmentsPlatform = async (req: Request, res: Response) => 
 export const approveTenant = async (req: Request, res: Response) => {
   try {
     const { tenantId } = (req as any).params;
+
+    const hasSubscription = await prisma.tenantSubscription.findFirst({
+      where: { tenantId, isActive: true }
+    });
+    if(!hasSubscription){
+      return res.status(400).json({
+        status: false,
+        message: "Cannot approve tenant without an active subscription. Please ensure the tenant has an active subscription before approval."
+      });
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.update({

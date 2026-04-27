@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
-import { INDUSTRIES } from "./industry.constants";
+import { CURRENCIES, INDUSTRIES } from "./industry.constants";
 import { Country, State } from "country-state-city";
+import countryToCurrency from "country-to-currency";
+import getSymbolFromCurrency from "currency-symbol-map";
 
 /**
  * @swagger
@@ -60,3 +62,51 @@ export const getStates = (req: Request, res: Response) => {
   if (!countryCode) return res.status(400).json({ message: "countryCode required" });
   res.json(State.getStatesOfCountry(countryCode));
 };
+
+export const getAllCurrencies = () => {
+  const uniqueCodes = new Set<string>();
+
+  Object.values(countryToCurrency).forEach((code) => {
+    if(code) uniqueCodes.add(code);
+  })
+
+  const currencies = Array.from(uniqueCodes).map((code) => ({
+    code,
+    symbol: getSymbolFromCurrency(code) || "",
+    name: code
+  }));
+
+  return currencies.sort((a, b) => a.code.localeCompare(b.code));
+}
+
+/**
+ * @swagger
+ * /meta/currencies:
+ *   get:
+ *     tags:
+ *       - meta
+ *     summary: Get all currencies
+ *     description: Returns a list of all currencies with code and symbol.
+ *     responses:
+ *       '200':
+ *         description: List of currencies fetched successfully
+ *       '500':
+ *         description: Failed to fetch currencies
+ */
+export const getCurrencies = (req: Request, res: Response) => {
+  try {
+    const currencies = getAllCurrencies();
+  
+    return res.status(200).json({
+      status: true,
+      message: "Currencies fetched successfully",
+      data: currencies
+    })
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch currencies",
+      error: (error as Error).message
+    })
+  }
+}

@@ -1,11 +1,13 @@
 import { Router } from "express";
 import * as attendController from "./attend.controller";
 import { auth, checkPermission, checkTenantApproval } from "../../core/middleware/auth";
+import { checkSubscriptionModuleAccess } from "../../core/middleware/platform.auth";
 
 const router = Router();
 
 
 router.use(auth, checkTenantApproval);
+router.use(checkSubscriptionModuleAccess("ATTENDANCE"));
 
 router.post(
     "/config/upsert", 

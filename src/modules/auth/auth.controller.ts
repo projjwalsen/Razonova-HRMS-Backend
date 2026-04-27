@@ -3,6 +3,7 @@ import { prisma } from "../../config/db/prisma";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import { seedTenantRoles, syncDefaultRolePermissions } from "../utils/seed.roles";
+import { forgotPasswordService, resetPasswordService, verifyOtpService } from "./auth.service";
 
 /**
  * @swagger
@@ -240,9 +241,7 @@ export const signup = async (req: Request, res: Response) => {
         await seedTenantRoles(prisma, result.tenant.id);
         await syncDefaultRolePermissions(prisma, result.tenant.id);
         // 6. Assign free plan
-        const freePlan = await prisma.subscriptionPlan.findFirst({
-            where: { isFree: true },
-        });
+
         // 🔹 Transaction 2: Tenant Setup / Provisioning
         await prisma.$transaction(async (tx) => {
             // 1. Create role
@@ -300,17 +299,6 @@ export const signup = async (req: Request, res: Response) => {
                 ],
                 skipDuplicates: true
             });
-
-
-            if (freePlan) {
-                await tx.tenantSubscription.create({
-                    data: {
-                        tenantId: result.tenant.id,
-                        planId: freePlan.id,
-                        startDate: new Date(),
-                    },
-                });
-            }
         });
 
         /* Generate SignIn token */
@@ -345,3 +333,199 @@ export const signup = async (req: Request, res: Response) => {
 }
 /* ---------------- OAuth in later uses -------------- */
 /* ----------- have to add in Login / Siggnup in future --------------- */
+
+
+/**
+ * @swagger
+ * /auth/forgot-password:
+ *   post:
+ *     tags:
+ *       - auth
+ *     summary: Send password reset OTP
+ *     description: Sends an OTP to the user's email for password reset.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: OTP sent successfully
+ *       400:
+ *         description: Invalid request
+ *       500:
+ *         description: Internal server error
+ */
+
+
+export const forgotPassword = async (req: Request, res: Response) => {
+    try {
+        const { email } = req.body;
+
+        const result = await forgotPasswordService(email);
+        if(!result.success){
+            return res.status(400).json({
+                status: false,
+                message: result.message
+            });
+        }
+        return res.status(200).json({
+            status: true,
+            message: result.message
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: error.message || "An error occurred while processing forgot password request"
+        });
+    }
+}
+
+/**
+ * @swagger
+ * /auth/verify-otp:
+ *   post:
+ *     tags:
+ *       - auth
+ *     summary: Verify password reset OTP
+ *     description: Verifies the OTP sent to the user's email.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - otp
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               otp:
+ *                 type: string
+ *                 example: "123456"
+ *     responses:
+ *       200:
+ *         description: OTP verified successfully
+ *       400:
+ *         description: Invalid OTP or missing fields
+ *       500:
+ *         description: Internal server error
+ */
+
+export const verifyOtp = async (req: Request, res: Response) => {
+    try {
+        const { email, otp } = req.body;
+
+        if(!email || !otp){
+            return res.status(400).json({
+                status: false,
+                message: "Email and OTP are required"
+            });
+        }
+
+        const result = await verifyOtpService(email, otp);
+        if(!result.success){
+            return res.status(400).json({
+                status: false,
+                message: result.message
+            });
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: result.message
+        });
+
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: error.message || "An error occurred while verifying OTP"
+        })
+    }
+}
+
+/**
+ * @swagger
+ * /auth/reset-password:
+ *   post:
+ *     tags:
+ *       - auth
+ *     summary: Reset password using OTP
+ *     description: Resets the user's password after OTP verification.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - otp
+ *               - newPassword
+ *               - confirmPassword
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               otp:
+ *                 type: string
+ *                 example: "123456"
+ *               newPassword:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 6
+ *               confirmPassword:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 6
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *       400:
+ *         description: Validation failed or OTP invalid
+ *       500:
+ *         description: Internal server error
+ */
+
+export const resetPassword = async (req: Request, res: Response) => {
+    try {
+        const { email, otp, newPassword, confirmPassword } = req.body;
+
+        if(newPassword !== confirmPassword){
+            return res.status(400).json({
+                status: false,
+                message: "Passwords do not match"
+            });
+        }
+
+        const result = await resetPasswordService(email, otp, newPassword);
+        if(!result.success){
+            return res.status(400).json({
+                status: false,
+                message: result.message
+            });
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: result.message
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: error.message || "An error occurred while resetting password"
+        });
+    }
+}
