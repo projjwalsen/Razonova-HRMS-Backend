@@ -28,7 +28,7 @@ router.get(
 
 router.patch(
     '/update',
-    upload.single("file"),
+    upload.single("photoUrl"),
     userController.updateMyProfile
 )
 

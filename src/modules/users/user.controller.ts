@@ -278,7 +278,7 @@ export const getUserDetails = async (req: Request, res: Response) => {
  *     tags:
  *       - users
  *     summary: Update my profile
- *     description: Update the logged-in user's profile, address, personal details, profile photo, and optional bank details.
+ *     description: Update the logged-in user's profile, address, personal details, profile photo, and optional bank details. Profile photo must be uploaded as multipart file using the field name photoUrl.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -288,10 +288,6 @@ export const getUserDetails = async (req: Request, res: Response) => {
  *           schema:
  *             type: object
  *             properties:
- *               profilePhoto:
- *                 type: string
- *                 format: binary
- *                 description: Optional profile photo upload
  *               name:
  *                 type: string
  *                 example: Rahul Sharma
@@ -307,7 +303,8 @@ export const getUserDetails = async (req: Request, res: Response) => {
  *                 example: O+
  *               photoUrl:
  *                 type: string
- *                 example: https://example.com/photo.jpg
+ *                 format: binary
+ *                 description: Profile photo file. Use this field name with multer upload.single("photoUrl").
  *               addressLine1:
  *                 type: string
  *                 example: 12 Park Street
@@ -334,30 +331,11 @@ export const getUserDetails = async (req: Request, res: Response) => {
  *                 example: "123456789012"
  *               bankDetails:
  *                 type: string
- *                 description: JSON string containing bank details
+ *                 description: JSON string containing bank details.
  *                 example: '{"accountHolderName":"Rahul Sharma","accountNumber":"1234567890","bankName":"HDFC Bank","ifscCode":"HDFC0001234","branchName":"Kolkata","upiId":"rahul@upi"}'
  *     responses:
  *       200:
  *         description: Profile updated successfully
- *         content:
- *           application/json:
- *             example:
- *               status: true
- *               message: Profile updated successfully
- *               data:
- *                 updatedUser:
- *                   id: "user_id"
- *                   name: Rahul Sharma
- *                   phone: "+919876543210"
- *                 updatedProfile:
- *                   dateOfBirth: "1995-08-20T00:00:00.000Z"
- *                   bloodGroup: O+
- *                   city: Kolkata
- *                   state: West Bengal
- *                 updatedBankDetails:
- *                   accountHolderName: Rahul Sharma
- *                   bankName: HDFC Bank
- *                   ifscCode: HDFC0001234
  *       401:
  *         description: Unauthorized
  *       404:
@@ -374,7 +352,6 @@ export const updateMyProfile = async (req: Request, res: Response) => {
             phone,
             dateOfBirth,
             bloodGroup,
-            photoUrl,
             addressLine1,
             addressLine2,
             city,
@@ -434,7 +411,7 @@ export const updateMyProfile = async (req: Request, res: Response) => {
                 update: {
                     dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
                     bloodGroup: bloodGroup ?? undefined,
-                    photoUrl: uploadedPhotoUrl ?? photoUrl ?? undefined,
+                    photoUrl: uploadedPhotoUrl ?? undefined,
                     addressLine1: addressLine1 ?? undefined,
                     addressLine2: addressLine2 ?? undefined,
                     city: city ?? undefined,
@@ -448,7 +425,7 @@ export const updateMyProfile = async (req: Request, res: Response) => {
                     userId: actor.id,
                     dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
                     bloodGroup: bloodGroup ?? null,
-                    photoUrl: uploadedPhotoUrl ?? photoUrl ?? null,
+                    photoUrl: uploadedPhotoUrl ?? null,
                     addressLine1: addressLine1 ?? null,
                     addressLine2: addressLine2 ?? null,
                     city: city ?? null,
