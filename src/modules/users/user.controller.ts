@@ -1792,7 +1792,7 @@ export const acceptOnboardingInvite = async (req: Request, res: Response) => {
             await tx.feed.create({
                 data: {
                     tenantId: invite.tenantId,
-                    subjectUserId: newUser.id,
+                    subjectedUserId: newUser.id,
                     departmentId: newUser.departmentId,
                     type: "EVENT",
                     content: null,
