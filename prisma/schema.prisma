@@ -46,6 +46,7 @@ model Tenant {
   leaveBalance          LeaveBalance[]
   holidayCalendars      HolidayCalendar[]
   holidays              Holiday[]
+  feeds                 Feed[]
 
   payrolls      Payroll[]
   payStructures PayStructure[]
@@ -146,6 +147,12 @@ model User {
   bankAccount               EmployeeBankAccount?
   leaveBalances             LeaveBalance[]
   employeePayrollComponents employeePayrollComponent[]
+
+  createdFeeds Feed[] @relation("FeedActor")// feeds created by the user
+  subjectFeeds Feed[] @relation("FeedSubjectUser") // feeds where the user is tagged or mentioned
+
+  feedComments FeedComment[]
+  feedReactions FeedReaction[]
 }
 
 model UserRole {
@@ -217,6 +224,7 @@ model Department {
   onboardingInvites     OnboardingInvite[]
   payStructures         PayStructure[]
   leaveApprovalPolicies LeaveApprovalPolicy[]
+  feeds                  Feed[]
 
   @@unique([name, tenantId]) // Ensure department names are unique within a tenant
 }
@@ -1112,4 +1120,83 @@ model Payroll {
 
   @@unique([tenantId, userId, month, year])
   @@index([tenantId, userId, month, year])
+}
+
+enum FeedType {
+  POST // manual HR/admin post
+  EVENT // automatically generated from events like work anniversaries, birthdays, etc.
+}
+
+model Feed {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  actorId String? // user who triggered the feed, can be null for system-generated events
+  actor   User?   @relation("FeedActor",fields: [actorId], references: [id])
+
+  subjectedUserId String? // user related to the feed event, e.g., the employee having a work anniversary
+  subjectedUser   User?   @relation("FeedSubjectUser",fields: [subjectedUserId], references: [id])
+
+  departmentId String? // if feed is related to a department event
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  type FeedType
+
+  content String? // text content of the feed
+  metadata Json? // additional data like event type, user mentions, etc.
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comments FeedComment[]
+  reactions FeedReaction[]
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, departmentId])
+  @@index([tenantId, type])
+}
+
+model FeedComment {
+  id String @id @default(uuid())
+
+  feedId String
+  feed   Feed   @relation(fields: [feedId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  content String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([feedId])
+  @@index([userId])
+}
+
+// Reaction to feed posts, e.g., likes, emojis, etc.
+enum ReactionType {
+  LIKE
+  LOVE
+  CLAP
+  CELEBRATE
+}
+
+model FeedReaction {
+  id String @id @default(uuid())
+
+  feedId String
+  feed   Feed   @relation(fields: [feedId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  type ReactionType
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([feedId, userId]) // one reaction per user per feed
 }

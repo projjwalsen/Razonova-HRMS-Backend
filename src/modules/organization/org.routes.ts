@@ -8,6 +8,7 @@ import ReportingRoute from "../reporting/reporting.routes";
 import AttendRoute from "../attendence/attend.routes";
 import LeaveRoute from "../leave/leave.routes";
 import PayrollRoute from "../payroll/payroll.routes"
+import AnnouncementRoute from "../feeds/feed.routes";
 
 const router = Router();
 
@@ -17,7 +18,7 @@ router.use("/users", UserRoute);
 router.use("/attendance", AttendRoute);
 router.use("/leave", LeaveRoute);
 router.use("/payroll", PayrollRoute);
-
+router.use("/feed-wall", AnnouncementRoute)
 
 const upload = createFileUpload({
     maxSize: 12, // 12MB

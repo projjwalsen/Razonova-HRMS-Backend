@@ -1789,6 +1789,21 @@ export const acceptOnboardingInvite = async (req: Request, res: Response) => {
                     completedAt: new Date()
                 }
             })
+            await tx.feed.create({
+                data: {
+                    tenantId: invite.tenantId,
+                    subjectUserId: newUser.id,
+                    departmentId: newUser.departmentId,
+                    type: "EVENT",
+                    content: null,
+                    metadata: {
+                        event: "NEW_JOINING",
+                        message: `${newUser.name} joined the team`,
+                        designationId: newUser.designationId,
+                        departmentId: newUser.departmentId
+                    }
+                }
+            });
             return newUser;
         });
 
