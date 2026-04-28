@@ -30,7 +30,6 @@ const handleError = (res: Response, error: any, fallbackMessage: string) => {
   });
 };
 
-
 /** ---------- Set Attendance Configuration ---------------------- */
 /**
  * @swagger
@@ -145,6 +144,8 @@ const handleError = (res: Response, error: any, fallbackMessage: string) => {
  *                         type: string
  *                         enum: [MON, TUE, WED, THU, FRI, SAT, SUN]
  *                       example: [MON, TUE, WED, THU, FRI]
+ *                     locationEnabled:
+ *                      type: boolean
  *                     createdAt:
  *                       type: string
  *                       format: date-time
@@ -191,6 +192,7 @@ export const upsertAttendanceConfig = async (req: Request, res: Response) => {
             checkInTime,
             checkOutTime,
             graceMinutes,
+            locationEnabled,
             halfDayMinutes,
             fullDayMinutes,
             workingDays
@@ -237,7 +239,8 @@ export const upsertAttendanceConfig = async (req: Request, res: Response) => {
             graceMinutes: graceMinutes !== undefined ? Number(graceMinutes) : undefined,
             halfDayMinutes: halfDayMinutes !== undefined ? Number(halfDayMinutes) : undefined,
             fullDayMinutes: fullDayMinutes !== undefined ? Number(fullDayMinutes) : undefined,
-            workingDays: Array.isArray(workingDays) ? workingDays : undefined
+            workingDays: Array.isArray(workingDays) ? workingDays : undefined,
+            locationEnabled: locationEnabled !== undefined ? Boolean(locationEnabled) : undefined
         });
 
         if(!result){
@@ -299,17 +302,54 @@ export const getAttendanceConfig = async (req: Request, res: Response) => {
  *     tags:
  *       - attendance
  *     summary: Check in for attendance
- *     description: Mark check-in for the current user.
+ *     description: Mark check-in for the current user. If location tracking is enabled by company admin, GPS coordinates (lat, lng) are required.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               lat:
+ *                 type: number
+ *                 example: 22.5726
+ *               lng:
+ *                 type: number
+ *                 example: 88.3639
+ *               address:
+ *                 type: string
+ *                 example: Kolkata, West Bengal, India
  *     responses:
  *       200:
  *         description: Checked in successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: true
+ *               message: Checked in successfully
+ *               data:
+ *                 id: "attendance_id"
+ *                 checkInAt: "2026-04-28T09:05:00.000Z"
+ *                 status: "PRESENT"
+ *                 isLate: false
+ *       400:
+ *         description: Validation error (e.g., location required, already checked in)
+ *       403:
+ *         description: Not allowed (holiday, leave, etc.)
  *       500:
  *         description: Failed to check in
  */
 export const checkIn = async (req: Request, res: Response) => {
     try {
         const actor = (req as any).user;
-        const result = await AttendService.checkIn(actor.tenantId, actor.id);
+        const { lat, lng, address } = req.body; // Optional location data for check-in
+        const result = await AttendService.checkIn(actor.tenantId, actor.id, {
+            lat,
+            lng,
+            address
+        });
         if(!result){
             return res.status(500).json({
                 status: false,
@@ -333,17 +373,54 @@ export const checkIn = async (req: Request, res: Response) => {
  *     tags:
  *       - attendance
  *     summary: Check out for attendance
- *     description: Mark check-out for the current user.
+ *     description: Mark check-out for the current user. If location tracking is enabled by company admin, GPS coordinates (lat, lng) are required.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               lat:
+ *                 type: number
+ *                 example: 22.5726
+ *               lng:
+ *                 type: number
+ *                 example: 88.3639
+ *               address:
+ *                 type: string
+ *                 example: Kolkata, West Bengal, India
  *     responses:
  *       200:
  *         description: Checked out successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: true
+ *               message: Checked out successfully
+ *               data:
+ *                 id: "attendance_id"
+ *                 checkOutAt: "2026-04-28T18:10:00.000Z"
+ *                 workedMinutes: 480
+ *                 status: "PRESENT"
+ *       400:
+ *         description: Validation error (e.g., location required, not checked in)
+ *       403:
+ *         description: Not allowed (leave, invalid state, etc.)
  *       500:
  *         description: Failed to check out
  */
 export const checkOut = async (req: Request, res: Response) => {
     try {
         const actor = (req as any).user;
-        const result = await AttendService.checkOut(actor.tenantId, actor.id);
+        const { lat, lng, address } = req.body; // Optional location data for check-out
+        const result = await AttendService.checkOut(actor.tenantId, actor.id, {
+            lat,
+            lng,
+            address
+        });
         if(!result){
             return res.status(500).json({
                 status: false,

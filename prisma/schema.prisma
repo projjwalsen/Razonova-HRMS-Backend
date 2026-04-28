@@ -103,7 +103,8 @@ model RolePermission {
 model User {
   id       String  @id @default(uuid())
   name     String
-  email    String  @unique
+  email    String  @unique // 
+  personalEmail String? @unique
   phone    String? @unique
   password String
 
@@ -356,6 +357,8 @@ model OnboardingInvite {
   joiningDate    DateTime?
   proposedSalary Float?
 
+  sourceOfHire String? // e.g., LinkedIn, Referral, Job Portal
+
   submittedAt DateTime?
   completedAt DateTime?
 
@@ -381,6 +384,9 @@ model EmployeeProfile {
   salary      Float?
   dateOfBirth DateTime?
 
+  bloodGroup   String?
+  photoUrl     String?
+
   panNumber    String? @unique
   aadharNumber String? @unique
 
@@ -391,8 +397,81 @@ model EmployeeProfile {
   country      String?
   pinCode      String?
 
+  sourceOfHire String? // e.g., LinkedIn, Referral, Job Portal
+
+  familyMembers  EmployeeFamilyMember[]
+  experiences    EmployeeExperience[]
+  qualifications EmployeeQualification[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum FamilyRelation {
+  FATHER
+  MOTHER
+  SPOUSE
+  CHILD
+  SIBLING
+  OTHER
+}
+
+model EmployeeFamilyMember {
+  id String @id @default(uuid())
+
+  employeeProfileId String
+  employeeProfile   EmployeeProfile @relation(fields: [employeeProfileId], references: [id])
+
+  relation       FamilyRelation
+  name           String
+  dateOfBirth    DateTime?
+  phone  String?
+  email          String?
+  occupation     String?
+  isDependent    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeProfileId])
+}
+
+model EmployeeExperience {
+  id String @id @default(uuid())
+
+  employeeProfileId String
+  employeeProfile   EmployeeProfile @relation(fields: [employeeProfileId], references: [id])
+
+  companyName  String
+  jobTitle     String?
+  startDate    DateTime?
+  endDate      DateTime?
+  isCurrent     Boolean @default(false)
+  description   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeProfileId])
+}
+
+model EmployeeQualification {
+  id String @id @default(uuid())
+
+  employeeProfileId String
+  employeeProfile   EmployeeProfile @relation(fields: [employeeProfileId], references: [id])
+
+  degree       String
+  institution   String?
+  fieldOfStudy String?
+  startYear    Int?
+  endYear      Int?
+  grade        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeProfileId])
 }
 
 enum AttendanceStatus {
@@ -418,6 +497,8 @@ model AttendanceConfig {
   halfDayMinutes Int @default(240) // minutes threshold for half-day - 4 hours
   fullDayMinutes Int @default(480) // minutes threshold for full-day - 8 hours
 
+  locationEnabled Boolean @default(false)
+
   workingDays    Json // e.g., ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
 
   createdAt DateTime @default(now())
@@ -436,6 +517,15 @@ model Attendance {
   date          DateTime // date of attendance
   checkInAt     DateTime?
   checkOutAt    DateTime?
+
+  checkInLat Float?
+  checkInLng Float?
+  checkInAddress String?
+
+  checkOutLat Float?
+  checkOutLng Float?
+  checkOutAddress String?
+
   status        AttendanceStatus @default(PRESENT)
   isLate        Boolean          @default(false)
   workedMinutes Int              @default(0)

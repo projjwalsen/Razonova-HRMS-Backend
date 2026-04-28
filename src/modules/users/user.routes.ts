@@ -1,8 +1,18 @@
 import { Router } from "express";
 import * as userController from "./user.controller";
 import { auth, checkTenantApproval } from "../../core/middleware/auth";
+import { createFileUpload } from "../../core/service/multer.service";
 
 const router = Router();
+
+const upload = createFileUpload({
+  maxSize: 12,
+  allowedTypes: [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+  ]
+});
 
 router.use(auth, checkTenantApproval);
 
@@ -17,8 +27,24 @@ router.get(
 )
 
 router.patch(
-    '/update/:userId',
+    '/update',
+    upload.single("file"),
     userController.updateMyProfile
+)
+
+router.put(
+    '/family-details',
+    userController.updateFamilyDetails
+)
+
+router.put(
+    '/qualification-details',
+    userController.updateQualificationDetails
+)
+
+router.put(
+    '/experience-details',
+    userController.updateExperienceDetails
 )
 
 router.patch(

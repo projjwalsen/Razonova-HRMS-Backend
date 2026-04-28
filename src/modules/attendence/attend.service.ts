@@ -18,6 +18,12 @@ type AttendanceResolvedDay = {
     remarks?: string | null;
 }
 
+type AttendanceLocationInput = {
+    lat?: number;
+    lng?: number;
+    address?: string;
+}
+
 export class AttendService {
     static async getTenantConfig(tenantId: string){
         return await prisma.attendanceConfig.findUnique({
@@ -30,6 +36,7 @@ export class AttendService {
         graceMinutes?: number,
         halfDayMinutes?: number,
         fullDayMinutes?: number,
+        locationEnabled?: boolean,
         workingDays?: string[]
     }) {
         return await prisma.attendanceConfig.upsert({
@@ -40,6 +47,7 @@ export class AttendService {
                 graceMinutes: payload.graceMinutes ?? 30,
                 halfDayMinutes: payload.halfDayMinutes ?? 240,
                 fullDayMinutes: payload.fullDayMinutes ?? 480,
+                locationEnabled: payload.locationEnabled ?? false,
                 workingDays: payload.workingDays ?? ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
             },
             create: {
@@ -49,6 +57,7 @@ export class AttendService {
                 graceMinutes: payload.graceMinutes ?? 30,
                 halfDayMinutes: payload.halfDayMinutes ?? 240,
                 fullDayMinutes: payload.fullDayMinutes ?? 480,
+                locationEnabled: payload.locationEnabled ?? false,
                 workingDays: payload.workingDays ?? ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
             }
         })
@@ -328,7 +337,7 @@ export class AttendService {
 
 
 
-    static async checkIn(tenantId: string, userId: string) {
+    static async checkIn(tenantId: string, userId: string, location?: AttendanceLocationInput) {
         const config = await this.getTenantConfig(tenantId);
         if (!config) {
             throw new Error("Attendance configuration not found for tenant");
@@ -336,6 +345,17 @@ export class AttendService {
         const timezone = await getTenantTimezone(tenantId);
         const now = new Date();
         const today = getStartOfDay(now, timezone);
+
+        if(config.locationEnabled) {
+            if(
+                location?.lat === undefined ||
+                location?.lng === undefined ||
+                Number.isNaN(Number(location.lat)) ||
+                Number.isNaN(Number(location.lng))
+            ) {
+                throw new Error("Invalid location coordinates");
+            }
+        }
 
         const resolved = await this.resolveAttendanceDay(tenantId, userId, today);
 
@@ -379,6 +399,9 @@ export class AttendService {
                 checkInAt: now,
                 isLate,
                 status,
+                checkInLat: location?.lat !== undefined ? location.lat : existing?.checkInLat,
+                checkInLng: location?.lng !== undefined ? location.lng : existing?.checkInLng,
+                checkInAddress: location?.address !== undefined ? location.address : existing?.checkInAddress,
                 leaveRequestId: null,
                 isOnApprovedLeave: false,
                 isHoliday: false,
@@ -396,11 +419,14 @@ export class AttendService {
                 isPaidLeave: false,
                 isHoliday: false,
                 isWeekOff: false,
+                checkInLat: location?.lat !== undefined ? location.lat : undefined,
+                checkInLng: location?.lng !== undefined ? location.lng : undefined,
+                checkInAddress: location?.address !== undefined ? location.address : undefined,
             }
         })
     }
 
-    static async checkOut (tenantId: string, userId: string) {
+    static async checkOut (tenantId: string, userId: string, location?: AttendanceLocationInput) {
         const config = await this.getTenantConfig(tenantId);
         if (!config) {
             throw new Error("Attendance configuration not found for tenant");
@@ -408,6 +434,17 @@ export class AttendService {
         const timezone = await getTenantTimezone(tenantId);
         const now = new Date();
         const today = getStartOfDay(now, timezone);
+
+        if(config.locationEnabled) {
+            if(
+                location?.lat === undefined ||
+                location?.lng === undefined ||
+                Number.isNaN(Number(location.lat)) ||
+                Number.isNaN(Number(location.lng))
+            ) {
+                throw new Error("Invalid location coordinates");
+            }
+        }
 
         const attendance = await prisma.attendance.findUnique({
             where: {
@@ -428,7 +465,6 @@ export class AttendService {
         }
 
         const workedMinutes = diffInMinutes(attendance.checkInAt, now);
-        const scheduledCheckOut = parseTimeToDate(today, config.checkOutTime, timezone);
 
         let finalStatus: "PRESENT" | "LATE" | "HALF_DAY" | "ABSENT" = attendance.isLate
             ? "LATE" : "PRESENT";
@@ -451,7 +487,11 @@ export class AttendService {
             data: {
                 checkOutAt: now,
                 workedMinutes,
-                status: finalStatus
+                status: finalStatus,
+
+                checkOutLat: location?.lat !== undefined ? location.lat : attendance.checkOutLat,
+                checkOutLng: location?.lng !== undefined ? location.lng : attendance.checkOutLng,
+                checkOutAddress: location?.address !== undefined ? location.address : attendance.checkOutAddress,
             }
         })
         await this.resolveAttendanceDay(tenantId, userId, today);
