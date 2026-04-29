@@ -1201,7 +1201,7 @@ export class AttendService {
                 status: "REJECTED",
                 rejectedById: actor.id,
                 rejectedAt: new Date(),
-                remarks: remarks ?? null
+                reason: remarks ?? "No reason provided"
             }
         });
     }
