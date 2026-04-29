@@ -913,18 +913,59 @@ export class PayrollService {
         const users = await prisma.user.findMany({
             where: {
                 tenantId,
-                isActive: true
+                OR: [
+                { isActive: true },
+                {
+                    resignationRequests: {
+                    some: {
+                        tenantId,
+                        status: {
+                        in: ["APPROVED", "COMPLETED"]
+                        },
+                        approvedLastWorkingDate: {
+                        gte: monthStart,
+                        lte: monthEnd
+                        }
+                    }
+                    }
+                }
+                ]
             },
             include: {
                 employeeProfile: true,
                 designation: true,
                 department: true,
+                resignationRequests: {
+                where: {
+                    tenantId,
+                    status: {
+                    in: ["APPROVED", "COMPLETED"]
+                    },
+                    approvedLastWorkingDate: {
+                    gte: monthStart,
+                    lte: monthEnd
+                    }
+                },
+                orderBy: {
+                    approvedLastWorkingDate: "desc"
+                },
+                take: 1
+                }
             }
         });
         const generatedPayrolls: any[] = [];
 
         await prisma.$transaction(async (tx) => {
             for(const user of users) {
+                const resignation = user.resignationRequests?.[0];
+
+                const effectivePayrollEnd =
+                resignation?.approvedLastWorkingDate &&
+                resignation.approvedLastWorkingDate < monthEnd
+                    ? resignation.approvedLastWorkingDate
+                    : monthEnd;
+
+
                 const salary = Number(user.employeeProfile?.salary ?? 0);
                 if(!salary || salary <= 0) continue;
 
@@ -966,8 +1007,8 @@ export class PayrollService {
                         tenantId,
                         userId: user.id,
                         date: {
-                            gte: monthStart,
-                            lte: monthEnd
+                        gte: monthStart,
+                        lte: effectivePayrollEnd
                         }
                     }
                 });
@@ -978,10 +1019,10 @@ export class PayrollService {
                         userId: user.id,
                         status: "APPROVED",
                         startDate: {
-                            lte: monthEnd
+                        lte: effectivePayrollEnd
                         },
                         endDate: {
-                            gte: monthStart
+                        gte: monthStart
                         }
                     },
                     include: {
@@ -996,6 +1037,13 @@ export class PayrollService {
 
                 let paidLeaves = 0;
                 let unpaidLeaves = 0;
+
+                const effectiveWorkingDaysInMonth = effectivePayrollEnd.getDate();
+                const proratedBaseSalary = Number(
+                ((salary / daysInMonth) * effectiveWorkingDaysInMonth).toFixed(2)
+                );
+
+                const payrollBaseSalary = resignation ? proratedBaseSalary : salary;
 
                 for(const leave of approvedLeaves){
                     if(leave.leavePolicyRule?.isPaid){
@@ -1013,7 +1061,7 @@ export class PayrollService {
                     tenantId,
                     user.id,
                     payStructure.id,
-                    salary
+                    payrollBaseSalary
                 )
 
                 let totalEarnings = 0;

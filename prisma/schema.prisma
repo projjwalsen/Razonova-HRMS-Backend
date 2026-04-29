@@ -431,6 +431,9 @@ model EmployeeProfile {
 
   sourceOfHire String? // e.g., LinkedIn, Referral, Job Portal
 
+  exitDate DateTime?
+  exitReason String?
+
   familyMembers  EmployeeFamilyMember[]
   experiences    EmployeeExperience[]
   qualifications EmployeeQualification[]
