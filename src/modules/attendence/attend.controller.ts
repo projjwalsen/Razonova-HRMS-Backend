@@ -849,6 +849,183 @@ export const getOutDuties = async (req: Request, res: Response) => {
 
 /**
  * @swagger
+ * /attendance/regularization/policy:
+ *   post:
+ *     tags:
+ *       - attendance
+ *     summary: Create or update attendance regularization policy
+ *     description: Create or update a single-approver policy for attendance regularization. Used to decide who can approve employee correction requests.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - approverType
+ *             properties:
+ *               id:
+ *                 type: string
+ *                 example: "policy_uuid"
+ *                 description: Provide id to update an existing policy.
+ *               name:
+ *                 type: string
+ *                 example: "Default Regularization Approval"
+ *               departmentId:
+ *                 type: string
+ *                 nullable: true
+ *                 example: "department_uuid"
+ *               designationId:
+ *                 type: string
+ *                 nullable: true
+ *                 example: "designation_uuid"
+ *               approverType:
+ *                 type: string
+ *                 enum: [REPORTING_MANAGER, DEPARTMENT_MANAGER, COMPANY_ADMIN, SPECIFIC_USER]
+ *                 example: COMPANY_ADMIN
+ *               userId:
+ *                 type: string
+ *                 nullable: true
+ *                 example: "user_uuid"
+ *                 description: Required only when approverType is SPECIFIC_USER.
+ *               isActive:
+ *                 type: boolean
+ *                 example: true
+ *           examples:
+ *             companyAdminFallback:
+ *               summary: Global fallback policy
+ *               value:
+ *                 name: "Default Regularization Approval"
+ *                 departmentId: null
+ *                 designationId: null
+ *                 approverType: "COMPANY_ADMIN"
+ *                 isActive: true
+ *             reportingManagerForDepartment:
+ *               summary: Department-specific reporting manager policy
+ *               value:
+ *                 name: "Engineering Regularization Approval"
+ *                 departmentId: "department_uuid"
+ *                 designationId: null
+ *                 approverType: "REPORTING_MANAGER"
+ *                 isActive: true
+ *             specificUserPolicy:
+ *               summary: Specific user approver policy
+ *               value:
+ *                 name: "HR Specific Approval"
+ *                 departmentId: null
+ *                 designationId: null
+ *                 approverType: "SPECIFIC_USER"
+ *                 userId: "user_uuid"
+ *                 isActive: true
+ *     responses:
+ *       200:
+ *         description: Attendance regularization policy upserted successfully
+ *       400:
+ *         description: Missing required fields
+ *       500:
+ *         description: Failed to upsert attendance regularization policy
+ */
+export const upsertRegularizationPolicy = async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+
+    const {
+      id,
+      name,
+      departmentId,
+      designationId,
+      approverType,
+      userId,
+      isActive
+    } = req.body;
+
+    if (!name || !approverType) {
+      return res.status(400).json({
+        status: false,
+        message: "name and approverType are required"
+      });
+    }
+
+    const result = await AttendService.upsertRegularizationPolicy(actor, {
+      id,
+      name,
+      departmentId,
+      designationId,
+      approverType,
+      userId,
+      isActive
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: "Attendance regularization policy upserted successfully",
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to upsert attendance regularization policy",
+      error: error.message
+    });
+  }
+};
+
+
+/**
+ * @swagger
+ * /attendance/regularization/policy:
+ *   get:
+ *     tags:
+ *       - attendance
+ *     summary: Get attendance regularization policies
+ *     description: Fetch all attendance regularization policies for the current tenant.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Attendance regularization policies fetched successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: true
+ *               message: "Attendance regularization policies fetched successfully"
+ *               data:
+ *                 - id: "policy_uuid"
+ *                   tenantId: "tenant_uuid"
+ *                   name: "Default Regularization Approval"
+ *                   departmentId: null
+ *                   designationId: null
+ *                   approverType: "COMPANY_ADMIN"
+ *                   userId: null
+ *                   isActive: true
+ *       500:
+ *         description: Failed to fetch attendance regularization policies
+ */
+export const getRegularizationPolicies = async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+
+    const result = await AttendService.getRegularizationPolicies(actor);
+
+    return res.status(200).json({
+      status: true,
+      message: "Attendance regularization policies fetched successfully",
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch attendance regularization policies",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * @swagger
  * /attendance/regularization/request:
  *   post:
  *     tags:

@@ -894,6 +894,174 @@ export class AttendService {
         })
     }
 
+    static async upsertRegularizationPolicy(actor: any, payload: {
+        id?: string;
+        name: string;
+        departmentId?: string | null;
+        designationId?: string | null;
+        approverType: "REPORTING_MANAGER" | "DEPARTMENT_MANAGER" | "COMPANY_ADMIN" | "SPECIFIC_USER";
+        userId?: string | null;
+        isActive?: boolean;
+    }) {
+        if (!actor?.tenantId) {
+            throw new Error("Actor tenant context missing");
+        }
+
+        if (!payload.name?.trim()) {
+            throw new Error("Policy name is required");
+        }
+
+        if (!payload.approverType) {
+            throw new Error("Approver type is required");
+        }
+
+        if (payload.approverType === "SPECIFIC_USER" && !payload.userId) {
+            throw new Error("userId is required for SPECIFIC_USER approver type");
+        }
+
+        if (payload.departmentId) {
+            const department = await prisma.department.findFirst({
+            where: {
+                id: payload.departmentId,
+                tenantId: actor.tenantId
+            }
+            });
+
+            if (!department) {
+            throw new Error("Department not found");
+            }
+        }
+
+        if (payload.designationId) {
+            const designation = await prisma.designation.findFirst({
+            where: {
+                id: payload.designationId,
+                tenantId: actor.tenantId
+            }
+            });
+
+            if (!designation) {
+            throw new Error("Designation not found");
+            }
+        }
+
+        if (payload.userId) {
+            const user = await prisma.user.findFirst({
+            where: {
+                id: payload.userId,
+                tenantId: actor.tenantId,
+                isActive: true
+            }
+            });
+
+            if (!user) {
+            throw new Error("Specific approver user not found");
+            }
+        }
+
+
+        if (payload.id) {
+            const existing = await prisma.attendanceRegularizationPolicy.findFirst({
+            where: {
+                id: payload.id,
+                tenantId: actor.tenantId
+            }
+            });
+
+            if (!existing) {
+            throw new Error("Attendance regularization policy not found");
+            }
+
+            return prisma.attendanceRegularizationPolicy.update({
+            where: { id: payload.id },
+            data: {
+                name: payload.name.trim(),
+                departmentId: payload.departmentId ?? null,
+                designationId: payload.designationId ?? null,
+                approverType: payload.approverType as any,
+                userId: payload.approverType === "SPECIFIC_USER" ? payload.userId : null,
+                isActive: payload.isActive ?? true
+            },
+            include: {
+                department: true,
+                designation: true,
+                user: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true
+                }
+                },
+                role: true
+            }
+            });
+        }
+
+        return prisma.attendanceRegularizationPolicy.upsert({
+            where: {
+            tenantId_name: {
+                tenantId: actor.tenantId,
+                name: payload.name.trim()
+            }
+            },
+            update: {
+            departmentId: payload.departmentId ?? null,
+            designationId: payload.designationId ?? null,
+            approverType: payload.approverType as any,
+            userId: payload.approverType === "SPECIFIC_USER" ? payload.userId : null,
+            isActive: payload.isActive ?? true
+            },
+            create: {
+            tenantId: actor.tenantId,
+            name: payload.name.trim(),
+            departmentId: payload.departmentId ?? null,
+            designationId: payload.designationId ?? null,
+            approverType: payload.approverType as any,
+            userId: payload.approverType === "SPECIFIC_USER" ? payload.userId : null,
+            isActive: payload.isActive ?? true
+            },
+            include: {
+            department: true,
+            designation: true,
+            user: {
+                select: {
+                id: true,
+                name: true,
+                email: true
+                }
+            },
+            role: true
+            }
+        });
+    }
+
+
+    static async getRegularizationPolicies(actor: any) {
+        if (!actor?.tenantId) {
+            throw new Error("Actor tenant context missing");
+        }
+
+        return prisma.attendanceRegularizationPolicy.findMany({
+            where: {
+                tenantId: actor.tenantId
+            },
+            include: {
+                department: {
+                    select: { id: true, name: true }
+                },
+                designation: {
+                    select: { id: true, name: true }
+                },
+                user: {
+                    select: { id: true, name: true, email: true }
+                },
+            },
+            orderBy: {
+                createdAt: "desc"
+            }
+        });
+    }
+
     private static async resolveAttendanceRegularizationPolicy(
         tenantId: string,
         user: any

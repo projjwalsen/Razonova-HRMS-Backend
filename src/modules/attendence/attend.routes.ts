@@ -93,6 +93,17 @@ attendController.getOutDuties
 
 /** ----------- REGULARIZATION REQUESTS ------------------ */
 router.post(
+  "/regularization/policy",
+  checkPermission("ATTENDANCE:MANAGE"),
+  attendController.upsertRegularizationPolicy
+);
+
+router.get(
+  "/regularization/policy",
+  checkPermission("ATTENDANCE:MANAGE"),
+  attendController.getRegularizationPolicies
+);
+router.post(
   "/regularization/request",
   attendController.createRegularizationRequest
 );

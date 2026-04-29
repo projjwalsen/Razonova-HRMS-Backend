@@ -56,6 +56,9 @@ model Tenant {
 
   attendanceRegularizationPolicies AttendanceRegularizationPolicy[]
   attendanceRegularizationRequests AttendanceRegularizationRequest[]
+
+  resignationRequests ResignationRequest[]
+  resignationApprovalPolicies ResignationApprovalPolicy[]
 }
 
 enum RoleType {
@@ -163,6 +166,11 @@ model User {
   createdFeeds Feed[] @relation("FeedActor")// feeds created by the user
   subjectFeeds Feed[] @relation("FeedSubjectUser") // feeds where the user is tagged or mentioned
 
+  resignationRequests ResignationRequest[] @relation("ResignationRequester")
+  approvedResignations ResignationRequest[] @relation("ResignationApprovedBy")
+  rejectedResignations ResignationRequest[] @relation("ResignationRejectedBy")
+  resignationApprovalPolicies ResignationApprovalPolicy[] @relation("ResignationPolicySpecificUser")
+
   feedComments FeedComment[]
   feedReactions FeedReaction[]
 }
@@ -237,6 +245,7 @@ model Department {
   payStructures         PayStructure[]
   leaveApprovalPolicies LeaveApprovalPolicy[]
   attendanceRegularizationPolicies AttendanceRegularizationPolicy[]
+  resignationApprovalPolicies ResignationApprovalPolicy[]
   feeds                  Feed[]
 
   @@unique([name, tenantId]) // Ensure department names are unique within a tenant
@@ -260,6 +269,7 @@ model Designation {
   updatedAt             DateTime              @updatedAt
   leaveApprovalPolicies LeaveApprovalPolicy[]
   attendanceRegularizationPolicies AttendanceRegularizationPolicy[]
+  resignationApprovalPolicies ResignationApprovalPolicy[]
 
   @@unique([name, tenantId]) // unique designation names per tenant
 }
@@ -1333,4 +1343,82 @@ model FeedReaction {
   updatedAt DateTime @updatedAt
 
   @@unique([feedId, userId]) // one reaction per user per feed
+}
+
+
+enum ResignationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  CANCELLED
+  COMPLETED
+}
+
+
+model ResignationApprovalPolicy {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  name String
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  designationId String?
+  designation   Designation? @relation(fields: [designationId], references: [id])
+
+  approverType LeaveApproverType
+
+  userId String?
+  user   User? @relation("ResignationPolicySpecificUser", fields: [userId], references: [id])
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId, departmentId, designationId, isActive])
+}
+
+model ResignationRequest {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  userId String
+  user   User @relation("ResignationRequester", fields: [userId], references: [id])
+
+  reason String
+
+  preferredLastWorkingDate DateTime?
+  approvedLastWorkingDate  DateTime?
+
+  status ResignationStatus @default(PENDING)
+
+  approverType   LeaveApproverType?
+  approverUserId String?
+
+  approvedById String?
+  approvedBy   User? @relation("ResignationApprovedBy", fields: [approvedById], references: [id])
+
+  rejectedById String?
+  rejectedBy   User? @relation("ResignationRejectedBy", fields: [rejectedById], references: [id])
+
+  adminRemarks String?
+
+  rejectedAt DateTime?
+  approvedAt DateTime?
+  withdrawnAt DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, userId, status])
+  @@index([tenantId, status])
 }

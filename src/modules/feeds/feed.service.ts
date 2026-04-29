@@ -1,6 +1,6 @@
 import { ReactionType } from "@prisma/client";
 import { prisma } from "../../config/db/prisma";
-import { getStartOfDay, getTenantTimezone } from "../utils/util";
+import { getEndOfDay, getStartOfDay, getTenantTimezone } from "../utils/util";
 
 export class FeedService {
 
@@ -289,7 +289,7 @@ export class FeedService {
         const now = new Date();
 
         const startOfToday = getStartOfDay(now, timezone);
-        const endOfToday = new Date(startOfToday);
+        const endOfToday = getEndOfDay(now, timezone);
         
         const todayMonth = now.getMonth();
         const todayDate = now.getDate();
@@ -365,7 +365,7 @@ export class FeedService {
                             },
                             metadata: {
                                 path: ["eventType"],
-                                equals: "ANNIVERSARY"
+                                equals: "WORK_ANNIVERSARY"
                             }
                         }
                     });
