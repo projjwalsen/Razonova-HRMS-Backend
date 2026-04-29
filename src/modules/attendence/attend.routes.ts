@@ -77,4 +77,17 @@ router.get(
     attendController.getMonthSummary
 )
 
+
+/** --------- OUT DUTIES ------------------ */
+router.post(
+  "/out-duty",
+  checkPermission("ATTENDANCE:MANAGE"),
+  attendController.markOutDuty
+);
+
+router.get(
+  "/out-duty",
+  checkPermission("ATTENDANCE:READ"),
+attendController.getOutDuties
+);
 export default router;

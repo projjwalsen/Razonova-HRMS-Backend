@@ -718,4 +718,179 @@ export class AttendService {
             }
         }
     }
+
+    static async markOutDuty(actor: any, payload: {
+        userId: string;
+        startDate: string;
+        endDate: string;
+        reason: string;
+    }) {
+        if(!actor?.tenantId){
+            throw new Error("Actor tenant context missing");
+        }
+
+        const config = await this.getTenantConfig(actor.tenantId);
+        if (!config) {
+            throw new Error("Attendance configuration not found for tenant");
+        }
+
+        const timezone = await getTenantTimezone(actor.tenantId);
+
+        const start = getStartOfDay(new Date(payload.startDate), timezone);
+        const end = getEndOfDay(new Date(payload.endDate), timezone);
+
+        // find the targeted user
+        const targetedUser = await prisma.user.findFirst({
+            where: {
+                id: payload.userId,
+                tenantId: actor.tenantId,
+                isActive: true
+            }
+        });
+
+        if(!targetedUser){
+            throw new Error("Targeted user not found in tenant");
+        }
+
+        // find attendances for the user in the given date range
+        const dates: Date[] = [];
+        const cursor = new Date(start);
+
+        while(cursor <= end){
+            dates.push(getStartOfDay(cursor, timezone));
+            cursor.setDate(cursor.getDate() + 1);
+        }
+
+        return prisma.$transaction(async (tx) => {
+            const outDuty = await tx.outDuty.create({
+                data: {
+                    tenantId: actor.tenantId,
+                    userId: payload.userId,
+                    markedById: actor.id,
+                    startDate: start,
+                    endDate: end,
+                    reason: payload.reason
+                }
+            });
+
+            for(const date of dates){
+                const resolvedAttendance = await this.resolveAttendanceDay(
+                    actor.tenantId,
+                    payload.userId,
+                    date
+                );
+
+                if(resolvedAttendance.status === "HOLIDAY" || resolvedAttendance.status === "WEEK_OFF"){
+                    continue;
+                }
+
+                if(resolvedAttendance.status === "ON_LEAVE"){
+                    continue;
+                }
+
+                const checkInAt = parseTimeToDate(date, config.checkInTime, timezone);
+                const checkOutAt = parseTimeToDate(date, config.checkOutTime, timezone);
+                const workedMinutes = diffInMinutes(checkInAt, checkOutAt);
+
+                await tx.attendance.upsert({
+                    where: {
+                        userId_date: {
+                            userId: payload.userId,
+                            date
+                        }
+                    },
+                    update: {
+                        checkInAt,
+                        checkOutAt,
+                        workedMinutes,
+                        status: "OUT_DUTY",
+                        isOutDuty: true,
+                        outDutyReason: payload.reason,
+                        isLate: false,
+                        isOnApprovedLeave: false,
+                        isHoliday: false,
+                        isWeekOff: false,
+                        manuallyUpdatedById: actor.id,
+                        manuallyUpdatedAt: new Date(),
+                        remarks: `Out Duty: ${payload.reason}`
+                    },
+                    create: {
+                        tenantId: actor.tenantId,
+                        userId: payload.userId,
+                        date,
+                        checkInAt,
+                        checkOutAt,
+                        workedMinutes,
+                        status: "OUT_DUTY",
+                        isOutDuty: true,
+                        outDutyReason: payload.reason,
+                        isLate: false,
+                        isOnApprovedLeave: false,
+                        isPaidLeave: false,
+                        isHoliday: false,
+                        isWeekOff: false,
+                        manuallyUpdatedById: actor.id,
+                        manuallyUpdatedAt: new Date(),
+                        remarks: `Out Duty: ${payload.reason}`
+                    }
+                })
+            }
+
+            return outDuty;
+        })
+    }
+
+    static async getOutDuties(actor: any, payload: {
+        userId?: string;
+        startDate?: string;
+        endDate?: string;
+        status?: string;
+    }) {
+        if(!actor?.tenantId){
+            throw new Error("Actor tenant context missing");
+        }
+        const timezone = await getTenantTimezone(actor.tenantId);
+        const where: any = {
+            tenantId: actor.tenantId,
+            ...(payload.userId ? { userId: payload.userId } : {}),
+            ...(payload.status ? { reason: { contains: payload.status } } : {})
+        };
+
+        if(payload.startDate || payload.endDate) {
+            where.startDate = {};
+
+            if(payload.startDate) {
+                where.startDate.gte = getStartOfDay(new Date(payload.startDate), timezone);
+            }
+
+            if(payload.endDate) {
+                where.endDate = {
+                    lte: getEndOfDay(new Date(payload.endDate), timezone)
+                };
+            }
+        }
+
+        return prisma.outDuty.findMany({
+            where,
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true
+                    }
+                },
+                markedBy: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: "desc"
+            }
+        })
+    }
 }

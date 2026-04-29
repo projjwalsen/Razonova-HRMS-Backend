@@ -688,3 +688,159 @@ export const getMonthSummary = async (req: Request, res: Response) => {
         return handleError(res, error, "Failed to get monthly attendance summary");
     }
 }
+
+
+/** ----------- OUT DUTIES ------------------ */
+
+/**
+ * @swagger
+ * /attendance/out-duty:
+ *   post:
+ *     tags:
+ *       - attendance
+ *     summary: Mark employee as Out Duty
+ *     description: COMPANY_ADMIN marks an employee as Out Duty for a date range. Official check-in/check-out time is taken from attendance configuration.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userId, startDate, endDate, reason]
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 example: "user_uuid"
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *                 example: "2026-04-29"
+ *               endDate:
+ *                 type: string
+ *                 format: date
+ *                 example: "2026-05-03"
+ *               reason:
+ *                 type: string
+ *                 example: "Client site visit"
+ *     responses:
+ *       201:
+ *         description: Out Duty marked successfully
+ *       400:
+ *         description: Missing required fields
+ *       500:
+ *         description: Failed to mark Out Duty
+ */
+export const markOutDuty = async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const { userId, startDate, endDate, reason } = req.body;
+
+    if (!userId || !startDate || !endDate || !reason) {
+      return res.status(400).json({
+        status: false,
+        message: "userId, startDate, endDate and reason are required"
+      });
+    }
+
+    const result = await AttendService.markOutDuty(actor, {
+      userId,
+      startDate,
+      endDate,
+      reason
+    });
+
+    if(!result){
+      return res.status(500).json({
+        status: false,
+        message: "Failed to mark Out Duty"
+      });
+    }
+
+    return res.status(201).json({
+      status: true,
+      message: "Out Duty marked successfully",
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to mark Out Duty",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /attendance/out-duty:
+ *   get:
+ *     tags:
+ *       - attendance
+ *     summary: Get Out Duty records
+ *     description: Fetch Out Duty records with optional filters.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         required: false
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         required: false
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         required: false
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [APPROVED, CANCELLED]
+ *         required: false
+ *     responses:
+ *       200:
+ *         description: Out Duty records fetched successfully
+ *       500:
+ *         description: Failed to fetch Out Duty records
+ */
+export const getOutDuties = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const { userId, startDate, endDate, status } = req.query;
+
+        const result = await AttendService.getOutDuties(actor, {
+            userId: userId ? String(userId) : undefined,
+            startDate: startDate ? String(startDate) : undefined,
+            endDate: endDate ? String(endDate) : undefined,
+            status: status ? String(status) : undefined
+        });
+
+        if(!result){
+            return res.status(404).json({
+                status: false,
+                message: "No Out Duty records found"
+            });
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: "Out Duty records fetched successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to fetch Out Duty records",
+            error: error.message
+        });
+    }
+}

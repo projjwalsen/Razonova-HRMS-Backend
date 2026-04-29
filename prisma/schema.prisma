@@ -46,6 +46,7 @@ model Tenant {
   leaveBalance          LeaveBalance[]
   holidayCalendars      HolidayCalendar[]
   holidays              Holiday[]
+  outDuties             OutDuty[]
   feeds                 Feed[]
 
   payrolls      Payroll[]
@@ -147,6 +148,9 @@ model User {
   bankAccount               EmployeeBankAccount?
   leaveBalances             LeaveBalance[]
   employeePayrollComponents employeePayrollComponent[]
+
+  outDuties    OutDuty[]
+  markOutDuties OutDuty[] @relation("OutDutyMarkedBy")
 
   createdFeeds Feed[] @relation("FeedActor")// feeds created by the user
   subjectFeeds Feed[] @relation("FeedSubjectUser") // feeds where the user is tagged or mentioned
@@ -490,6 +494,8 @@ enum AttendanceStatus {
   ON_LEAVE
   HOLIDAY
   WEEK_OFF
+  OUT_DUTY
+  REGULARIZED
 }
 
 model AttendanceConfig {
@@ -547,6 +553,16 @@ model Attendance {
   isHoliday      Boolean @default(false)
   isWeekOff     Boolean @default(false)
 
+  isOutDuty     Boolean @default(false)
+  outDutyReason String?
+
+  regularizedAt DateTime?
+  regularizedById String?
+  regularizationReason String?
+
+  manuallyUpdatedAt DateTime?
+  manuallyUpdatedById String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -554,6 +570,35 @@ model Attendance {
   @@index([userId, date])
   @@index([tenantId, date])
   @@index([tenantId, status, date])
+}
+
+enum OutDutyStatus {
+  APPROVED
+  CANCELLED
+}
+
+model OutDuty {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  userId String
+  user User @relation(fields: [userId], references: [id])
+
+  markedById String
+  markedBy User @relation("OutDutyMarkedBy", fields: [markedById], references: [id])
+
+  startDate DateTime
+  endDate DateTime
+
+  reason String
+  status OutDutyStatus @default(APPROVED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, userId, startDate, endDate])
 }
 
 enum EmploymentType {
