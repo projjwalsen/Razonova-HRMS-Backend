@@ -992,7 +992,6 @@ export class AttendService {
                     email: true
                 }
                 },
-                role: true
             }
             });
         }
@@ -1030,7 +1029,6 @@ export class AttendService {
                 email: true
                 }
             },
-            role: true
             }
         });
     }
