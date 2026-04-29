@@ -66,108 +66,108 @@ export class FeedService {
         limit?: number;
         departmentId?: string;
     }) {
-        const limit = Math.min(params.limit || 20, 50);
+    const limit = Math.min(params.limit || 20, 50);
 
-        const whereClause: any = {
-            tenantId: actor.tenantId,
-            ...(params.cursor 
-                ? {
-                    createdAt: {
-                        lt: new Date(params.cursor)
+    const whereClause: any = {
+        tenantId: actor.tenantId,
+        ...(params.cursor
+        ? {
+            createdAt: {
+                lt: new Date(params.cursor)
+            }
+            }
+        : {})
+    };
+
+    // If departmentId is passed, show company-wide + that department feed
+    if (params.departmentId) {
+        whereClause.OR = [
+        { departmentId: null },
+        { departmentId: params.departmentId }
+        ];
+    }
+
+    // If departmentId is NOT passed, do NOT add OR.
+    // This returns all tenant feeds: department feeds + company-wide feeds.
+
+    const feeds = await prisma.feed.findMany({
+        where: whereClause,
+        include: {
+        actor: {
+            select: {
+            id: true,
+            email: true,
+            name: true,
+            employeeProfile: {
+                select: {
+                photoUrl: true
+                }
+            }
+            }
+        },
+        subjectedUser: {
+            select: {
+            id: true,
+            name: true,
+            email: true,
+            department: {
+                select: { id: true, name: true }
+            },
+            designation: {
+                select: { id: true, name: true }
+            },
+            employeeProfile: {
+                select: {
+                photoUrl: true,
+                dateOfBirth: true,
+                joiningDate: true
+                }
+            }
+            }
+        },
+        department: {
+            select: { id: true, name: true }
+        },
+        comments: {
+            take: 5,
+            orderBy: { createdAt: "desc" },
+            include: {
+            user: {
+                select: {
+                id: true,
+                name: true,
+                employeeProfile: {
+                    select: {
+                    photoUrl: true
                     }
                 }
-            : {})
+                }
+            }
+            }
+        },
+        reactions: true,
+        _count: {
+            select: {
+            comments: true,
+            reactions: true
+            }
         }
-        if(params.departmentId){
-            whereClause.OR = [
-                { departmentId: null },
-                { departmentId: params.departmentId }
-            ]
-        } else {
-            whereClause.OR = [
-                { departmentId: null },
-                { departmentId: actor.departmentId || undefined }
-            ]
-        }
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit
+    });
 
-        const feeds = await prisma.feed.findMany({
-                where: whereClause,
-                include: {
-                    actor: {
-                        select: {
-                            id: true,
-                            email: true,
-                            name: true,
-                            employeeProfile: {
-                                select: {
-                                    photoUrl: true
-                                }
-                            }
-                        }
-                    },
-                    subjectedUser: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true,
-                            department: {
-                                select: { id: true, name: true }
-                            },
-                            designation: {
-                                select: { id: true, name: true }
-                            },
-                            employeeProfile: {
-                                select: {
-                                    photoUrl: true,
-                                    dateOfBirth: true,
-                                    joiningDate: true
-                                }
-                            }
-                        }
-                    },
-                    department: {
-                        select: { id: true, name: true }
-                    },
-                    comments: {
-                        take: 5,
-                        orderBy: { createdAt: "desc" },
-                        include: {
-                            user: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    employeeProfile: {
-                                        select: {
-                                            photoUrl: true
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    reactions: true,
-                    _count: {
-                        select: {
-                            comments: true,
-                            reactions: true
-                        }
-                    }
-                },
-                orderBy: { createdAt: "desc" },
-                take: limit
-            });
+    const nextCursor =
+        feeds.length === limit
+        ? feeds[feeds.length - 1].createdAt.toISOString()
+        : null;
 
-          const nextCursor =
-            feeds.length === limit
-            ? feeds[feeds.length - 1].createdAt.toISOString()
-            : null;
-
-        return {
-            limit,
-            nextCursor,
-            hasMore: Boolean(nextCursor),
-            feeds,
-        }
+    return {
+        limit,
+        nextCursor,
+        hasMore: Boolean(nextCursor),
+        feeds
+    };
     }
 
     static async addComment(actor: any, feedId: string, comment: string) {
