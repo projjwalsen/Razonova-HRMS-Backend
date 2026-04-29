@@ -844,3 +844,254 @@ export const getOutDuties = async (req: Request, res: Response) => {
         });
     }
 }
+
+/** ------------------ ATTENDANCE REGULARIZATION ------------------ */
+
+/**
+ * @swagger
+ * /attendance/regularization/request:
+ *   post:
+ *     tags:
+ *       - attendance
+ *     summary: Create attendance regularization request
+ *     description: Employee raises a request to correct missed or incorrect attendance. The request remains pending until an authorized approver approves/rejects it.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - date
+ *               - reason
+ *             properties:
+ *               date:
+ *                 type: string
+ *                 format: date
+ *                 example: "2026-04-29"
+ *               requestedCheckInAt:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2026-04-29T09:15:00.000Z"
+ *               requestedCheckOutAt:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2026-04-29T18:10:00.000Z"
+ *               reason:
+ *                 type: string
+ *                 example: "Forgot to check in due to network issue"
+ *     responses:
+ *       201:
+ *         description: Attendance regularization request created successfully
+ *       400:
+ *         description: Missing required fields or pending request already exists
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Failed to create regularization request
+ */
+export const createRegularizationRequest = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const { date, requestedCheckInAt, requestedCheckOutAt, reason } = req.body;
+
+        if (!date || !reason) {
+            return res.status(400).json({
+                status: false,
+                message: "date and reason are required"
+            });
+        }
+
+        if (!requestedCheckInAt && !requestedCheckOutAt) {
+            return res.status(400).json({
+                status: false,
+                message: "At least requestedCheckInAt or requestedCheckOutAt is required"
+            });
+        }
+
+        const result = await AttendService.createRegularizationRequest(actor, {
+            date,
+            requestedCheckInAt,
+            requestedCheckOutAt,
+            reason
+        });
+        if(!result){
+            return res.status(500).json({
+                status: false,
+                message: "Failed to create attendance regularization request"
+            });
+        }
+
+        return res.status(201).json({
+            status: true,
+            message: "Attendance regularization request created successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to create attendance regularization request",
+            error: error.message
+        });
+    }
+}
+
+
+/**
+ * @swagger
+ * /attendance/regularization/{requestId}/approve:
+ *   patch:
+ *     tags:
+ *       - attendance
+ *     summary: Approve attendance regularization request
+ *     description: Authorized approver approves the regularization request. Once approved, the attendance record is updated with the requested check-in/check-out time.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: requestId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Attendance regularization request ID
+ *         example: "regularization_request_uuid"
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               remarks:
+ *                 type: string
+ *                 example: "Approved after verifying with reporting manager"
+ *     responses:
+ *       200:
+ *         description: Attendance regularization request approved successfully
+ *       400:
+ *         description: Invalid request
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: User not allowed to approve this request
+ *       404:
+ *         description: Regularization request not found
+ *       500:
+ *         description: Failed to approve regularization request
+ */
+export const approveRegularizationRequest = async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const { requestId } = (req as any).params;
+    const { remarks } = (req as any).body;
+
+    if (!requestId) {
+      return res.status(400).json({
+        status: false,
+        message: "requestId is required"
+      });
+    }
+
+    const result = await AttendService.approveRegularization(
+      actor,
+      requestId,
+      remarks
+    );
+    if(!result){
+      return res.status(500).json({
+        status: false,
+        message: "Failed to approve regularization request"
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Attendance regularization request approved successfully",
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to approve regularization request",
+      error: error.message
+    });
+  }
+};
+
+
+/**
+ * @swagger
+ * /attendance/regularization/{requestId}/reject:
+ *   patch:
+ *     tags:
+ *       - attendance
+ *     summary: Reject attendance regularization request
+ *     description: Authorized approver rejects a pending attendance regularization request.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: requestId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Attendance regularization request ID
+ *         example: "regularization_request_uuid"
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               remarks:
+ *                 type: string
+ *                 example: "Rejected because attendance data did not match"
+ *     responses:
+ *       200:
+ *         description: Attendance regularization request rejected successfully
+ *       400:
+ *         description: Invalid request
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: User not allowed to reject this request
+ *       404:
+ *         description: Regularization request not found
+ *       500:
+ *         description: Failed to reject regularization request
+ */
+export const rejectRegularizationRequest = async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).user;
+    const { requestId } = (req as any).params;
+    const { remarks } = req.body;
+
+    if (!requestId) {
+      return res.status(400).json({
+        status: false,
+        message: "requestId is required"
+      });
+    }
+
+    const result = await AttendService.rejectRegularization(
+      actor,
+      requestId,
+      remarks
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Attendance regularization request rejected successfully",
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to reject regularization request",
+      error: error.message
+    });
+  }
+};

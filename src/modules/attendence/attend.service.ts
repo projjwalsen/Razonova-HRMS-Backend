@@ -893,4 +893,316 @@ export class AttendService {
             }
         })
     }
+
+    private static async resolveAttendanceRegularizationPolicy(
+        tenantId: string,
+        user: any
+    ) {
+        let policy = await prisma.attendanceRegularizationPolicy.findFirst({
+            where: {
+            tenantId,
+            isActive: true,
+            departmentId: user.departmentId ?? null,
+            designationId: user.designationId ?? null
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        if (policy) return policy;
+
+        policy = await prisma.attendanceRegularizationPolicy.findFirst({
+            where: {
+            tenantId,
+            isActive: true,
+            departmentId: user.departmentId ?? null,
+            designationId: null
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        if (policy) return policy;
+
+        policy = await prisma.attendanceRegularizationPolicy.findFirst({
+            where: {
+            tenantId,
+            isActive: true,
+            departmentId: null,
+            designationId: null
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        return policy;
+    }
+
+    static async createRegularizationRequest(actor: any, payload: {
+        date: string;
+        requestedCheckInAt?: string;
+        requestedCheckOutAt?: string;
+        reason: string;
+    }) {
+        if(!actor?.tenantId){
+            throw new Error("Actor tenant context missing");
+        }
+        if(!payload.date){
+            throw new Error("Date is required");
+        }
+
+        const timezone = await getTenantTimezone(actor.tenantId);
+        const attendanceDate = getStartOfDay(new Date(payload.date), timezone);
+
+        const existingPendingRequest = await prisma.attendanceRegularizationRequest.findFirst({
+            where: {
+                tenantId: actor.tenantId,
+                userId: actor.id,
+                date: attendanceDate,
+                status: "PENDING"
+            }
+        });
+
+        if(existingPendingRequest) {
+            throw new Error("A pending regularization request already exists for this date.");
+        }
+
+        const user = await prisma.user.findFirst({
+            where: {
+                id: actor.id,
+                tenantId: actor.tenantId
+            },
+            include: {
+                department: true,
+                employeeProfile: true
+            }
+        });
+        if(!user){
+            throw new Error("User not found");
+        }
+
+        const policy = await this.resolveAttendanceRegularizationPolicy(actor.tenantId, user);
+
+        if(!policy){
+            throw new Error("No attendance regularization policy found for tenant");
+        }
+
+        const attendance = await prisma.attendance.findUnique({
+            where: {
+                userId_date: {
+                    userId: actor.id,
+                    date: attendanceDate
+                }
+            }
+        });
+
+        return prisma.attendanceRegularizationRequest.create({
+            data: {
+            tenantId: actor.tenantId,
+            userId: actor.id,
+            attendanceId: attendance?.id ?? null,
+            date: attendanceDate,
+            requestedCheckInAt: payload.requestedCheckInAt
+                ? new Date(payload.requestedCheckInAt)
+                : null,
+            requestedCheckOutAt: payload.requestedCheckOutAt
+                ? new Date(payload.requestedCheckOutAt)
+                : null,
+            reason: payload.reason.trim(),
+            status: "PENDING",
+            approverType: policy.approverType,
+            approverUserId: policy.userId ?? null,
+            }
+        });
+    }
+
+    private static async canApproveRegularization(actor: any, request: any) {
+        const requester = request.user;
+
+        if(request.approverType === "SPECIFIC_USER"){
+            return request.approverUserId === actor.id;
+        }
+        if(request.approverType === "REPORTING_MANAGER"){
+            return requester.managerId === actor.id;
+        }
+        if(request.approverType === "DEPARTMENT_MANAGER"){
+            const department = await prisma.department.findFirst({
+                where:{
+                    id: requester.departmentId,
+                    tenantId: actor.tenantId
+                }
+            });
+
+            return department?.managerId === actor.id
+        }
+
+        if (request.approverType === "COMPANY_ADMIN") {
+            const adminRole = await prisma.userRole.findFirst({
+            where: {
+                userId: actor.id,
+                role: {
+                tenantId: actor.tenantId,
+                name: "COMPANY_ADMIN",
+                type: "TENANT"
+                }
+            }
+            });
+
+            return Boolean(adminRole);
+        }
+
+        return false
+    }
+
+    static async approveRegularization(
+        actor: any,
+        requestId: string,
+        remarks?: string
+    ) {
+        if(!actor.tenantId){
+            throw new Error ("Actor tenant context missing");
+        }
+
+        return prisma.$transaction(async (tx) => {
+            const request = await tx.attendanceRegularizationRequest.findFirst({
+                where: {
+                    id: requestId,
+                    tenantId: actor.tenantId,
+                    status: "PENDING"
+                },
+                include: {
+                    user: true,
+                    attendance: true
+                }
+            });
+
+            if(!request){
+                throw new Error("Regularization request not found");
+            }
+
+            const canApprove = await this.canApproveRegularization(actor, request);
+
+            if(!canApprove){
+                throw new Error("You don't have permission to approve this request");
+            }
+
+            const config = await tx.attendanceConfig.findFirst({
+                where: {
+                    tenantId: actor.tenantId
+                }
+            });
+
+            if(!config){
+                throw new Error("Attendance configuration not found for tenant");
+            }
+
+            const checkInAt = request.requestedCheckInAt;
+            const checkOutAt = request.requestedCheckOutAt;
+
+            const workedMinutes = checkInAt && checkOutAt ? diffInMinutes(checkInAt, checkOutAt) : 0;
+
+            let finalStatus: any = "REGULARIZED";
+
+            if (checkInAt && checkOutAt) {
+                if (workedMinutes < (config.halfDayMinutes ?? 240)) {
+                    finalStatus = "ABSENT";
+                } else if (workedMinutes < (config.fullDayMinutes ?? 480)) {
+                    finalStatus = "HALF_DAY";
+                } else {
+                    finalStatus = "REGULARIZED";
+                }
+            }
+
+            await tx.attendance.upsert({
+                where: {
+                    userId_date: {
+                    userId: request.userId,
+                    date: request.date
+                    }
+                },
+                update: {
+                    checkInAt: checkInAt ?? undefined,
+                    checkOutAt: checkOutAt ?? undefined,
+                    workedMinutes,
+                    status: finalStatus,
+                    isLate: false,
+                    regularizedById: actor.id,
+                    regularizedAt: new Date(),
+                    regularizationReason: request.reason,
+                    manuallyUpdatedById: actor.id,
+                    manuallyUpdatedAt: new Date(),
+                    remarks: `Regularized: ${request.reason}`
+                },
+                create: {
+                    tenantId: actor.tenantId,
+                    userId: request.userId,
+                    date: request.date,
+                    checkInAt,
+                    checkOutAt,
+                    workedMinutes,
+                    status: finalStatus,
+                    isLate: false,
+                    isOnApprovedLeave: false,
+                    isPaidLeave: false,
+                    isHoliday: false,
+                    isWeekOff: false,
+                    regularizedById: actor.id,
+                    regularizedAt: new Date(),
+                    regularizationReason: request.reason,
+                    manuallyUpdatedById: actor.id,
+                    manuallyUpdatedAt: new Date(),
+                    remarks: `Regularized: ${request.reason}`
+                }
+            });
+
+            return tx.attendanceRegularizationRequest.update({
+                where: { id: request.id },
+                data: {
+                    status: "APPROVED",
+                    approvedById: actor.id,
+                    approvedAt: new Date()
+                }
+            });
+        })
+    }
+
+    static async rejectRegularization(
+        actor: any,
+        requestId: string,
+        remarks?: string
+    ) {
+        if(!actor.tenantId){
+            throw new Error ("Actor tenant context missing");
+        }
+
+        const request = await prisma.attendanceRegularizationRequest.findFirst({
+            where: {
+                id: requestId,
+                tenantId: actor.tenantId,
+                status: "PENDING"
+            },
+            include: {
+                user: true
+            }
+        });
+
+        if(!request){
+            throw new Error("Regularization request not found");
+        }
+
+        const canApprove = await this.canApproveRegularization(actor, request);
+
+        if(!canApprove){
+            throw new Error("You'r not allowed to reject this request");
+        }
+
+
+
+        return prisma.attendanceRegularizationRequest.update({
+            where: { id: request.id },
+            data: {
+                status: "REJECTED",
+                rejectedById: actor.id,
+                rejectedAt: new Date(),
+                remarks: remarks ?? null
+            }
+        });
+    }
 }

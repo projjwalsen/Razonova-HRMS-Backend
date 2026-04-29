@@ -53,6 +53,9 @@ model Tenant {
   payStructures PayStructure[]
   payrollComponentMasters PayrollComponentMaster[]
   employeePayrollComponents employeePayrollComponent[]
+
+  attendanceRegularizationPolicies AttendanceRegularizationPolicy[]
+  attendanceRegularizationRequests AttendanceRegularizationRequest[]
 }
 
 enum RoleType {
@@ -152,6 +155,11 @@ model User {
   outDuties    OutDuty[]
   markOutDuties OutDuty[] @relation("OutDutyMarkedBy")
 
+  attendanceRegularizationRequests AttendanceRegularizationRequest[] @relation("AttendanceRegularizationRequester")
+  approvedAttendanceRegularizations AttendanceRegularizationRequest[] @relation("AttendanceRegularizationApprovedBy")
+  rejectedAttendanceRegularizations AttendanceRegularizationRequest[] @relation("AttendanceRegularizationRejectedBy")
+  attendanceRegularizationPolicies AttendanceRegularizationPolicy[] @relation("AttendanceRegularizationPolicySpecificUser")
+
   createdFeeds Feed[] @relation("FeedActor")// feeds created by the user
   subjectFeeds Feed[] @relation("FeedSubjectUser") // feeds where the user is tagged or mentioned
 
@@ -228,6 +236,7 @@ model Department {
   onboardingInvites     OnboardingInvite[]
   payStructures         PayStructure[]
   leaveApprovalPolicies LeaveApprovalPolicy[]
+  attendanceRegularizationPolicies AttendanceRegularizationPolicy[]
   feeds                  Feed[]
 
   @@unique([name, tenantId]) // Ensure department names are unique within a tenant
@@ -250,6 +259,7 @@ model Designation {
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
   leaveApprovalPolicies LeaveApprovalPolicy[]
+  attendanceRegularizationPolicies AttendanceRegularizationPolicy[]
 
   @@unique([name, tenantId]) // unique designation names per tenant
 }
@@ -519,6 +529,83 @@ model AttendanceConfig {
   updatedAt DateTime @updatedAt
 }
 
+model AttendanceRegularizationPolicy {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  name     String
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  designationId String?
+  designation   Designation? @relation(fields: [designationId], references: [id])
+
+  approverType LeaveApproverType
+
+  userId String? // if approverType is SPECIFIC_USER
+  user   User?   @relation("AttendanceRegularizationPolicySpecificUser",fields: [userId], references: [id])
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId, departmentId, designationId, isActive])
+}
+
+enum RegularizationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model AttendanceRegularizationRequest {
+id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  userId String
+  user   User @relation("AttendanceRegularizationRequester",fields: [userId], references: [id])
+
+  attendanceId String?
+  attendance   Attendance? @relation(fields: [attendanceId], references: [id])
+
+  date DateTime
+
+  requestedCheckInAt DateTime?
+  requestedCheckOutAt DateTime?
+
+  reason String
+
+  status RegularizationStatus @default(PENDING)
+
+  approvedById String?
+  approvedBy   User? @relation("AttendanceRegularizationApprovedBy", fields: [approvedById], references: [id])
+
+  rejectedById String?
+  rejectedBy   User? @relation("AttendanceRegularizationRejectedBy", fields: [rejectedById], references: [id])
+
+  approverType LeaveApproverType?
+  approverUserId String?
+  approverRoleId String?
+
+  approvedAt DateTime?
+  rejectedAt DateTime?
+  rejectionReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, userId, status])
+  @@index([tenantId, date])
+}
+
 model Attendance {
   id String @id @default(uuid())
 
@@ -565,6 +652,8 @@ model Attendance {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  regularizationRequests AttendanceRegularizationRequest[]
 
   @@unique([userId, date])
   @@index([userId, date])

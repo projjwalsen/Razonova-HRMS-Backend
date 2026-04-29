@@ -90,4 +90,22 @@ router.get(
   checkPermission("ATTENDANCE:READ"),
 attendController.getOutDuties
 );
+
+/** ----------- REGULARIZATION REQUESTS ------------------ */
+router.post(
+  "/regularization/request",
+  attendController.createRegularizationRequest
+);
+
+router.patch(
+  "/regularization/:requestId/approve",
+//   checkPermission("ATTENDANCE:APPROVE_REGULARIZATION"),
+  attendController.approveRegularizationRequest
+);
+
+router.patch(
+  "/regularization/:requestId/reject",
+//   checkPermission("ATTENDANCE:APPROVE_REGULARIZATION"),
+  attendController.rejectRegularizationRequest
+);
 export default router;
