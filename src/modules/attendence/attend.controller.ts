@@ -1203,6 +1203,68 @@ export const createRegularizationRequest = async (req: Request, res: Response) =
 
 /**
  * @swagger
+ * /attendance/regularization/my-requests:
+ *   get:
+ *     tags:
+ *       - attendance
+ *     summary: Get my attendance regularization requests
+ *     description: Fetch all attendance regularization requests submitted by the logged-in employee.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: My regularization requests fetched successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: true
+ *               message: "My regularization requests fetched successfully"
+ *               data:
+ *                 - id: "regularization_request_uuid"
+ *                   tenantId: "tenant_uuid"
+ *                   userId: "employee_uuid"
+ *                   attendanceId: "attendance_uuid"
+ *                   date: "2026-04-29T00:00:00.000Z"
+ *                   requestedCheckInAt: "2026-04-29T09:15:00.000Z"
+ *                   requestedCheckOutAt: "2026-04-29T18:10:00.000Z"
+ *                   reason: "Forgot to check in due to network issue"
+ *                   status: "PENDING"
+ *                   approverType: "COMPANY_ADMIN"
+ *                   approverUserId: null
+ *                   approvedAt: null
+ *                   rejectedAt: null
+ *                   createdAt: "2026-04-29T10:00:00.000Z"
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Failed to fetch my regularization requests
+ */
+export const getMyRegularizationRequests = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const actor = (req as any).user;
+
+        const result = await AttendService.getMyRegularizationRequests(actor);
+
+        return res.status(200).json({
+        status: true,
+        message: "My regularization requests fetched successfully",
+        data: result
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+        status: false,
+        message: "Failed to fetch my regularization requests",
+        error: error.message
+        });
+    }
+};
+
+
+/**
+ * @swagger
  * /attendance/regularization/{requestId}/approve:
  *   patch:
  *     tags:

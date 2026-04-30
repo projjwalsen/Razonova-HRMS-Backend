@@ -1280,6 +1280,39 @@ export class AttendService {
         });
     }
 
+    static async getMyRegularizationRequests(actor: any) {
+        if (!actor?.tenantId) {
+            throw new Error("Actor tenant context missing");
+        }
+
+        return prisma.attendanceRegularizationRequest.findMany({
+            where: {
+            tenantId: actor.tenantId,
+            userId: actor.id
+            },
+            include: {
+            attendance: true,
+            approvedBy: {
+                select: {
+                id: true,
+                name: true,
+                email: true
+                }
+            },
+            rejectedBy: {
+                select: {
+                id: true,
+                name: true,
+                email: true
+                }
+            }
+            },
+            orderBy: {
+            createdAt: "desc"
+            }
+        });
+    }
+
     static async getPendingRegularizationApprovals(actor: any) {
         if (!actor?.tenantId) {
             throw new Error("Actor tenant context missing");

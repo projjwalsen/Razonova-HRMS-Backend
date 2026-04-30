@@ -105,8 +105,14 @@ router.get(
 );
 router.post(
   "/regularization/request",
-  checkPermission("ATTENDANCE:CONFIGURE"),
+  checkPermission("ATTENDANCE:REGULARIZATION_REQUEST"),
   attendController.createRegularizationRequest
+);
+
+router.get(
+  "/regularization/my-requests",
+  checkPermission("ATTENDANCE:REGULARIZATION_REQUEST"),
+  attendController.getMyRegularizationRequests
 );
 
 router.get(
