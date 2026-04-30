@@ -202,13 +202,21 @@ export const getUserDetails = async (req: Request, res: Response) => {
                 id: true,
                 name: true,
                 email: true,
+                personalEmail: true,
+                phone: true,
                 isActive: true,
                 tenantId: true,
                 employeeProfile: {
                     include: {
-                        familyMembers: true,
-                        qualifications: true,
-                        experiences: true,
+                        familyMembers: {
+                            orderBy: { createdAt: "desc" }
+                        },
+                        qualifications: {
+                            orderBy: { createdAt: "desc" }
+                        },
+                        experiences: {
+                            orderBy: { createdAt: "desc" }
+                        }
                     }
                 },
                 bankAccount: true,
