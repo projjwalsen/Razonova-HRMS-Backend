@@ -10,7 +10,8 @@ type AttendanceResolvedDay = {
     | "HALF_DAY"
     | "ON_LEAVE"
     | "HOLIDAY"
-    | "WEEK_OFF";
+    | "WEEK_OFF"
+    | "OUT_DUTY";
     leaveRequestId?: string;
     isPaidLeave?: boolean;
     isHoliday?: boolean;
@@ -173,6 +174,29 @@ export class AttendService {
                 isPaidLeave: leave.leavePolicyRule?.isPaid ?? false,
                 remarks: `On Leave: ${leave.leaveType.name}`
             }
+        }
+
+        const outDuty = await prisma.outDuty.findFirst({
+            where: {
+                tenantId,
+                userId,
+                status: "APPROVED",
+                startDate: {
+                lte: date
+                },
+                endDate: {
+                gte: date
+                }
+            }
+        });
+
+        if (outDuty) {
+            return {
+                date,
+                status: "OUT_DUTY",
+                isOutDuty: true,
+                remarks: `Out Duty: ${outDuty.reason}`
+            };
         }
 
         return {
@@ -523,59 +547,85 @@ export class AttendService {
                 name: true,
                 email: true
                 }
-            },
-            leaveRequest: {
-                select: {
-                id: true,
-                status: true,
-                totalDays: true,
-                leaveType: {
-                    select: {
-                    id: true,
-                    name: true
-                    }
-                }
-                }
             }
-            },
-            orderBy: {
-            updatedAt: "desc"
             }
         });
 
+        // 🔥 CASE: No attendance row
+        if (userId && attendances.length === 0) {
+            const resolved = await this.resolveAttendanceDay(
+                tenantId,
+                userId,
+                today
+            );
+
+            const isOutDuty = resolved.status === "OUT_DUTY";
+            const isOnLeave = resolved.status === "ON_LEAVE";
+            const isHoliday = resolved.status === "HOLIDAY";
+            const isWeekOff = resolved.status === "WEEK_OFF";
+
+            return [
+            {
+                userId,
+                date: today,
+                status: resolved.status,
+                checkInAt: null,
+                checkOutAt: null,
+                isOutDuty,
+                isOnApprovedLeave: isOnLeave,
+                isHoliday,
+                isWeekOff,
+                actionState: {
+                disableCheckIn:
+                    isOutDuty || isOnLeave || isHoliday || isWeekOff,
+                disableCheckOut: true,
+                reason: isOutDuty
+                    ? "You are marked as Out Duty today"
+                    : isOnLeave
+                    ? "You are on approved leave today"
+                    : isHoliday
+                    ? "Today is a holiday"
+                    : isWeekOff
+                    ? "Today is a week off"
+                    : "You have not checked in yet"
+                }
+            }
+            ];
+        }
+
+        // 🔥 CASE: Attendance exists
         return attendances.map((attendance) => {
             const isOutDuty =
-            attendance.isOutDuty === true || attendance.status === "OUT_DUTY";
+            attendance.isOutDuty || attendance.status === "OUT_DUTY";
 
             const isOnLeave =
-            attendance.isOnApprovedLeave === true || attendance.status === "ON_LEAVE";
+            attendance.isOnApprovedLeave ||
+            attendance.status === "ON_LEAVE";
 
             const isHoliday =
-            attendance.isHoliday === true || attendance.status === "HOLIDAY";
+            attendance.isHoliday || attendance.status === "HOLIDAY";
 
             const isWeekOff =
-            attendance.isWeekOff === true || attendance.status === "WEEK_OFF";
-
-            const disableCheckIn =
-            Boolean(attendance.checkInAt) ||
-            isOutDuty ||
-            isOnLeave ||
-            isHoliday ||
-            isWeekOff;
-
-            const disableCheckOut =
-            Boolean(attendance.checkOutAt) ||
-            !attendance.checkInAt ||
-            isOutDuty ||
-            isOnLeave ||
-            isHoliday ||
-            isWeekOff;
+            attendance.isWeekOff || attendance.status === "WEEK_OFF";
 
             return {
             ...attendance,
             actionState: {
-                disableCheckIn,
-                disableCheckOut,
+                disableCheckIn:
+                Boolean(attendance.checkInAt) ||
+                isOutDuty ||
+                isOnLeave ||
+                isHoliday ||
+                isWeekOff,
+
+                disableCheckOut:
+                Boolean(attendance.checkOutAt) ||
+                !attendance.checkInAt ||
+                isOutDuty ||
+                isOnLeave ||
+                isHoliday ||
+                isWeekOff,
+
                 reason: isOutDuty
                 ? "You are marked as Out Duty today"
                 : isOnLeave
