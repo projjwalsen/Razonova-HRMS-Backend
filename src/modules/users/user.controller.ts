@@ -928,17 +928,19 @@ export const updateExperienceDetails = async (req: Request, res: Response) => {
                     data: experiences.map((exp: any) => ({
                         employeeProfileId: profile.id,
                         companyName: exp.companyName,
-                        designation: exp.designation,
+                        jobTitle: exp.jobTitle ?? exp.designation ?? null,
                         startDate: exp.startDate ? new Date(exp.startDate) : null,
                         endDate: exp.endDate ? new Date(exp.endDate) : null,
-                        responsibilities: exp.responsibilities ?? null
+                        isCurrent: exp.isCurrent ?? false,
+                        description: exp.description ?? exp.responsibilities ?? null
                     }))
                 })
             }
         });
 
         const result = await prisma.employeeExperience.findMany({
-            where: { employeeProfileId: profile.id }
+            where: { employeeProfileId: profile.id },
+            orderBy: { startDate: "desc" }
         });
 
         return res.status(200).json({

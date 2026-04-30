@@ -1317,3 +1317,11 @@ export const contactUsEmail = async (req: Request, res: Response) => {
         });
     }
 }
+
+export const orgDashboardKpis = async (req: Request, res: Response) => {
+    try {
+        
+    } catch (error: any) {
+        
+    }
+}
