@@ -510,38 +510,88 @@ export class AttendService {
         const timezone = await getTenantTimezone(tenantId);
         const today = getStartOfDay(new Date(), timezone);
 
-        return prisma.attendance.findMany({
+        const attendances = await prisma.attendance.findMany({
             where: {
-                tenantId,
-                date: today,
-                ...(userId ? { userId } : {})
+            tenantId,
+            date: today,
+            ...(userId ? { userId } : {})
             },
             include: {
-                user: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true
-                    }
-                },
-                leaveRequest: {
-                    select: {
-                        id: true,
-                        status: true,
-                        totalDays: true,
-                        leaveType: {
-                            select: {
-                                id: true,
-                                name: true
-                            }
-                        }
-                    }
+            user: {
+                select: {
+                id: true,
+                name: true,
+                email: true
                 }
             },
-            orderBy: {
-                updatedAt: "desc"
+            leaveRequest: {
+                select: {
+                id: true,
+                status: true,
+                totalDays: true,
+                leaveType: {
+                    select: {
+                    id: true,
+                    name: true
+                    }
+                }
+                }
             }
-        })
+            },
+            orderBy: {
+            updatedAt: "desc"
+            }
+        });
+
+        return attendances.map((attendance) => {
+            const isOutDuty =
+            attendance.isOutDuty === true || attendance.status === "OUT_DUTY";
+
+            const isOnLeave =
+            attendance.isOnApprovedLeave === true || attendance.status === "ON_LEAVE";
+
+            const isHoliday =
+            attendance.isHoliday === true || attendance.status === "HOLIDAY";
+
+            const isWeekOff =
+            attendance.isWeekOff === true || attendance.status === "WEEK_OFF";
+
+            const disableCheckIn =
+            Boolean(attendance.checkInAt) ||
+            isOutDuty ||
+            isOnLeave ||
+            isHoliday ||
+            isWeekOff;
+
+            const disableCheckOut =
+            Boolean(attendance.checkOutAt) ||
+            !attendance.checkInAt ||
+            isOutDuty ||
+            isOnLeave ||
+            isHoliday ||
+            isWeekOff;
+
+            return {
+            ...attendance,
+            actionState: {
+                disableCheckIn,
+                disableCheckOut,
+                reason: isOutDuty
+                ? "You are marked as Out Duty today"
+                : isOnLeave
+                ? "You are on approved leave today"
+                : isHoliday
+                ? "Today is a holiday"
+                : isWeekOff
+                ? "Today is a week off"
+                : attendance.checkOutAt
+                ? "Already checked out today"
+                : attendance.checkInAt
+                ? "Already checked in today"
+                : null
+            }
+            };
+        });
     }
 
 

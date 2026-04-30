@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { prisma } from "../../config/db/prisma";
 import { deleteFromS3, uploadToS3 } from "../../config/s3/s3.config";
 import { DepartmentPolicy } from "../../core/policies/departmnt.policy";
-import { escapeHtml, fillTemplate } from "../utils/util";
+import { escapeHtml, fillTemplate, getStartOfDay, getTenantTimezone } from "../utils/util";
 import { CONTACT_US_EMAIL_TEMPLATE } from "../utils/mail.template";
 import { sendMail } from "../../core/service/mail.service";
 
@@ -1318,10 +1318,156 @@ export const contactUsEmail = async (req: Request, res: Response) => {
     }
 }
 
+
+/**
+ * @swagger
+ * /organization/dashboard/kpis:
+ *   get:
+ *     tags:
+ *       - organization
+ *     summary: Get organization dashboard KPIs
+ *     description: Fetch key organization dashboard metrics for the current tenant including employees, departments, today's attendance, and pending approvals.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Organization dashboard KPIs fetched successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: true
+ *               message: "Organization dashboard KPIs fetched successfully"
+ *               data:
+ *                 totalEmployees: 42
+ *                 totalDepartments: 6
+ *                 attendanceToday:
+ *                   present: 28
+ *                   absent: 4
+ *                   onLeave: 3
+ *                 pendingApprovals:
+ *                   leaves: 5
+ *                   regularization: 2
+ *                   resignation: 1
+ *                   total: 8
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Failed to fetch organization dashboard KPIs
+ */
 export const orgDashboardKpis = async (req: Request, res: Response) => {
-    try {
-        
-    } catch (error: any) {
-        
+  try {
+    const actor = (req as any).user;
+
+    if (!actor?.tenantId) {
+      return res.status(401).json({
+        status: false,
+        message: "Tenant context missing"
+      });
     }
-}
+
+    const timezone = await getTenantTimezone(actor.tenantId);
+    const today = getStartOfDay(new Date(), timezone);
+
+    const [
+      totalEmployees,
+      totalDepartments,
+      present,
+      absent,
+      onLeave,
+      pendingLeaves,
+      pendingRegularization,
+      pendingResignation
+    ] = await Promise.all([
+      prisma.user.count({
+        where: {
+          tenantId: actor.tenantId,
+          isActive: true
+        }
+      }),
+
+      prisma.department.count({
+        where: {
+          tenantId: actor.tenantId
+        }
+      }),
+
+      prisma.attendance.count({
+        where: {
+          tenantId: actor.tenantId,
+          date: today,
+          status: {
+            in: ["PRESENT", "LATE", "REGULARIZED", "OUT_DUTY"]
+          }
+        }
+      }),
+
+      prisma.attendance.count({
+        where: {
+          tenantId: actor.tenantId,
+          date: today,
+          status: "ABSENT"
+        }
+      }),
+
+      prisma.attendance.count({
+        where: {
+          tenantId: actor.tenantId,
+          date: today,
+          status: "ON_LEAVE"
+        }
+      }),
+
+      prisma.leaveRequest.count({
+        where: {
+          tenantId: actor.tenantId,
+          status: {
+            in: ["PENDING", "PARTIALLY_APPROVED"]
+          }
+        }
+      }),
+
+      prisma.attendanceRegularizationRequest.count({
+        where: {
+          tenantId: actor.tenantId,
+          status: "PENDING"
+        }
+      }),
+
+      prisma.resignationRequest.count({
+        where: {
+          tenantId: actor.tenantId,
+          status: "PENDING"
+        }
+      })
+    ]);
+
+    const totalPendingApprovals =
+      pendingLeaves + pendingRegularization + pendingResignation;
+
+    return res.status(200).json({
+      status: true,
+      message: "Organization dashboard KPIs fetched successfully",
+      data: {
+        totalEmployees,
+        totalDepartments,
+        attendanceToday: {
+          present,
+          absent,
+          onLeave
+        },
+        pendingApprovals: {
+          leaves: pendingLeaves,
+          regularization: pendingRegularization,
+          resignation: pendingResignation,
+          total: totalPendingApprovals
+        }
+      }
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch organization dashboard KPIs",
+      error: error.message
+    });
+  }
+};
