@@ -105,18 +105,19 @@ router.get(
 );
 router.post(
   "/regularization/request",
+  checkPermission("ATTENDANCE:MANAGE"),
   attendController.createRegularizationRequest
 );
 
 router.patch(
   "/regularization/:requestId/approve",
-//   checkPermission("ATTENDANCE:APPROVE_REGULARIZATION"),
+  checkPermission("ATTENDANCE:MANAGE"),
   attendController.approveRegularizationRequest
 );
 
 router.patch(
   "/regularization/:requestId/reject",
-//   checkPermission("ATTENDANCE:APPROVE_REGULARIZATION"),
+  checkPermission("ATTENDANCE:MANAGE"),
   attendController.rejectRegularizationRequest
 );
 export default router;
