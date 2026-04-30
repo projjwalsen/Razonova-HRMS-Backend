@@ -10,12 +10,20 @@ type AttendanceResolvedDay = {
     | "HALF_DAY"
     | "ON_LEAVE"
     | "HOLIDAY"
-    | "WEEK_OFF";
+    | "WEEK_OFF"
+    | "OUT_DUTY";
     leaveRequestId?: string;
     isPaidLeave?: boolean;
     isHoliday?: boolean;
     isWeekOff?: boolean;
+    isOutDuty?: boolean;
     remarks?: string | null;
+}
+
+type AttendanceLocationInput = {
+    lat?: number;
+    lng?: number;
+    address?: string;
 }
 
 export class AttendService {
@@ -30,6 +38,7 @@ export class AttendService {
         graceMinutes?: number,
         halfDayMinutes?: number,
         fullDayMinutes?: number,
+        locationEnabled?: boolean,
         workingDays?: string[]
     }) {
         return await prisma.attendanceConfig.upsert({
@@ -40,6 +49,7 @@ export class AttendService {
                 graceMinutes: payload.graceMinutes ?? 30,
                 halfDayMinutes: payload.halfDayMinutes ?? 240,
                 fullDayMinutes: payload.fullDayMinutes ?? 480,
+                locationEnabled: payload.locationEnabled ?? false,
                 workingDays: payload.workingDays ?? ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
             },
             create: {
@@ -49,6 +59,7 @@ export class AttendService {
                 graceMinutes: payload.graceMinutes ?? 30,
                 halfDayMinutes: payload.halfDayMinutes ?? 240,
                 fullDayMinutes: payload.fullDayMinutes ?? 480,
+                locationEnabled: payload.locationEnabled ?? false,
                 workingDays: payload.workingDays ?? ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
             }
         })
@@ -164,6 +175,29 @@ export class AttendService {
                 isPaidLeave: leave.leavePolicyRule?.isPaid ?? false,
                 remarks: `On Leave: ${leave.leaveType.name}`
             }
+        }
+
+        const outDuty = await prisma.outDuty.findFirst({
+            where: {
+                tenantId,
+                userId,
+                status: "APPROVED",
+                startDate: {
+                lte: date
+                },
+                endDate: {
+                gte: date
+                }
+            }
+        });
+
+        if (outDuty) {
+            return {
+                date,
+                status: "OUT_DUTY",
+                isOutDuty: true,
+                remarks: `Out Duty: ${outDuty.reason}`
+            };
         }
 
         return {
@@ -328,7 +362,7 @@ export class AttendService {
 
 
 
-    static async checkIn(tenantId: string, userId: string) {
+    static async checkIn(tenantId: string, userId: string, location?: AttendanceLocationInput) {
         const config = await this.getTenantConfig(tenantId);
         if (!config) {
             throw new Error("Attendance configuration not found for tenant");
@@ -336,6 +370,17 @@ export class AttendService {
         const timezone = await getTenantTimezone(tenantId);
         const now = new Date();
         const today = getStartOfDay(now, timezone);
+
+        if(config.locationEnabled) {
+            if(
+                location?.lat === undefined ||
+                location?.lng === undefined ||
+                Number.isNaN(Number(location.lat)) ||
+                Number.isNaN(Number(location.lng))
+            ) {
+                throw new Error("Invalid location coordinates");
+            }
+        }
 
         const resolved = await this.resolveAttendanceDay(tenantId, userId, today);
 
@@ -379,6 +424,9 @@ export class AttendService {
                 checkInAt: now,
                 isLate,
                 status,
+                checkInLat: location?.lat !== undefined ? location.lat : existing?.checkInLat,
+                checkInLng: location?.lng !== undefined ? location.lng : existing?.checkInLng,
+                checkInAddress: location?.address !== undefined ? location.address : existing?.checkInAddress,
                 leaveRequestId: null,
                 isOnApprovedLeave: false,
                 isHoliday: false,
@@ -396,11 +444,14 @@ export class AttendService {
                 isPaidLeave: false,
                 isHoliday: false,
                 isWeekOff: false,
+                checkInLat: location?.lat !== undefined ? location.lat : undefined,
+                checkInLng: location?.lng !== undefined ? location.lng : undefined,
+                checkInAddress: location?.address !== undefined ? location.address : undefined,
             }
         })
     }
 
-    static async checkOut (tenantId: string, userId: string) {
+    static async checkOut (tenantId: string, userId: string, location?: AttendanceLocationInput) {
         const config = await this.getTenantConfig(tenantId);
         if (!config) {
             throw new Error("Attendance configuration not found for tenant");
@@ -408,6 +459,17 @@ export class AttendService {
         const timezone = await getTenantTimezone(tenantId);
         const now = new Date();
         const today = getStartOfDay(now, timezone);
+
+        if(config.locationEnabled) {
+            if(
+                location?.lat === undefined ||
+                location?.lng === undefined ||
+                Number.isNaN(Number(location.lat)) ||
+                Number.isNaN(Number(location.lng))
+            ) {
+                throw new Error("Invalid location coordinates");
+            }
+        }
 
         const attendance = await prisma.attendance.findUnique({
             where: {
@@ -428,7 +490,6 @@ export class AttendService {
         }
 
         const workedMinutes = diffInMinutes(attendance.checkInAt, now);
-        const scheduledCheckOut = parseTimeToDate(today, config.checkOutTime, timezone);
 
         let finalStatus: "PRESENT" | "LATE" | "HALF_DAY" | "ABSENT" = attendance.isLate
             ? "LATE" : "PRESENT";
@@ -451,7 +512,11 @@ export class AttendService {
             data: {
                 checkOutAt: now,
                 workedMinutes,
-                status: finalStatus
+                status: finalStatus,
+
+                checkOutLat: location?.lat !== undefined ? location.lat : attendance.checkOutLat,
+                checkOutLng: location?.lng !== undefined ? location.lng : attendance.checkOutLng,
+                checkOutAddress: location?.address !== undefined ? location.address : attendance.checkOutAddress,
             }
         })
         await this.resolveAttendanceDay(tenantId, userId, today);
@@ -470,38 +535,114 @@ export class AttendService {
         const timezone = await getTenantTimezone(tenantId);
         const today = getStartOfDay(new Date(), timezone);
 
-        return prisma.attendance.findMany({
+        const attendances = await prisma.attendance.findMany({
             where: {
-                tenantId,
-                date: today,
-                ...(userId ? { userId } : {})
+            tenantId,
+            date: today,
+            ...(userId ? { userId } : {})
             },
             include: {
-                user: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true
-                    }
-                },
-                leaveRequest: {
-                    select: {
-                        id: true,
-                        status: true,
-                        totalDays: true,
-                        leaveType: {
-                            select: {
-                                id: true,
-                                name: true
-                            }
-                        }
-                    }
+            user: {
+                select: {
+                id: true,
+                name: true,
+                email: true
                 }
-            },
-            orderBy: {
-                updatedAt: "desc"
             }
-        })
+            }
+        });
+
+        // 🔥 CASE: No attendance row
+        if (userId && attendances.length === 0) {
+            const resolved = await this.resolveAttendanceDay(
+                tenantId,
+                userId,
+                today
+            );
+
+            const isOutDuty = resolved.status === "OUT_DUTY";
+            const isOnLeave = resolved.status === "ON_LEAVE";
+            const isHoliday = resolved.status === "HOLIDAY";
+            const isWeekOff = resolved.status === "WEEK_OFF";
+
+            return [
+            {
+                userId,
+                date: today,
+                status: resolved.status,
+                checkInAt: null,
+                checkOutAt: null,
+                isOutDuty,
+                isOnApprovedLeave: isOnLeave,
+                isHoliday,
+                isWeekOff,
+                actionState: {
+                disableCheckIn:
+                    isOutDuty || isOnLeave || isHoliday || isWeekOff,
+                disableCheckOut: true,
+                reason: isOutDuty
+                    ? "You are marked as Out Duty today"
+                    : isOnLeave
+                    ? "You are on approved leave today"
+                    : isHoliday
+                    ? "Today is a holiday"
+                    : isWeekOff
+                    ? "Today is a week off"
+                    : "You have not checked in yet"
+                }
+            }
+            ];
+        }
+
+        // 🔥 CASE: Attendance exists
+        return attendances.map((attendance) => {
+            const isOutDuty =
+            attendance.isOutDuty || attendance.status === "OUT_DUTY";
+
+            const isOnLeave =
+            attendance.isOnApprovedLeave ||
+            attendance.status === "ON_LEAVE";
+
+            const isHoliday =
+            attendance.isHoliday || attendance.status === "HOLIDAY";
+
+            const isWeekOff =
+            attendance.isWeekOff || attendance.status === "WEEK_OFF";
+
+            return {
+            ...attendance,
+            actionState: {
+                disableCheckIn:
+                Boolean(attendance.checkInAt) ||
+                isOutDuty ||
+                isOnLeave ||
+                isHoliday ||
+                isWeekOff,
+
+                disableCheckOut:
+                Boolean(attendance.checkOutAt) ||
+                !attendance.checkInAt ||
+                isOutDuty ||
+                isOnLeave ||
+                isHoliday ||
+                isWeekOff,
+
+                reason: isOutDuty
+                ? "You are marked as Out Duty today"
+                : isOnLeave
+                ? "You are on approved leave today"
+                : isHoliday
+                ? "Today is a holiday"
+                : isWeekOff
+                ? "Today is a week off"
+                : attendance.checkOutAt
+                ? "Already checked out today"
+                : attendance.checkInAt
+                ? "Already checked in today"
+                : null
+            }
+            };
+        });
     }
 
 
@@ -677,5 +818,765 @@ export class AttendService {
                 }))
             }
         }
+    }
+
+    static async markOutDuty(actor: any, payload: {
+        userId: string;
+        startDate: string;
+        endDate: string;
+        reason: string;
+    }) {
+        if(!actor?.tenantId){
+            throw new Error("Actor tenant context missing");
+        }
+
+        const config = await this.getTenantConfig(actor.tenantId);
+        if (!config) {
+            throw new Error("Attendance configuration not found for tenant");
+        }
+
+        const timezone = await getTenantTimezone(actor.tenantId);
+
+        const start = getStartOfDay(new Date(payload.startDate), timezone);
+        const end = getEndOfDay(new Date(payload.endDate), timezone);
+
+        // find the targeted user
+        const targetedUser = await prisma.user.findFirst({
+            where: {
+                id: payload.userId,
+                tenantId: actor.tenantId,
+                isActive: true
+            }
+        });
+
+        if(!targetedUser){
+            throw new Error("Targeted user not found in tenant");
+        }
+
+        // find attendances for the user in the given date range
+        const dates: Date[] = [];
+        const cursor = new Date(start);
+
+        while(cursor <= end){
+            dates.push(getStartOfDay(cursor, timezone));
+            cursor.setDate(cursor.getDate() + 1);
+        }
+
+        return prisma.$transaction(async (tx) => {
+            const outDuty = await tx.outDuty.create({
+                data: {
+                    tenantId: actor.tenantId,
+                    userId: payload.userId,
+                    markedById: actor.id,
+                    startDate: start,
+                    endDate: end,
+                    reason: payload.reason
+                }
+            });
+
+            for(const date of dates){
+                const resolvedAttendance = await this.resolveAttendanceDay(
+                    actor.tenantId,
+                    payload.userId,
+                    date
+                );
+
+                if(resolvedAttendance.status === "HOLIDAY" || resolvedAttendance.status === "WEEK_OFF"){
+                    continue;
+                }
+
+                if(resolvedAttendance.status === "ON_LEAVE"){
+                    continue;
+                }
+
+                const checkInAt = parseTimeToDate(date, config.checkInTime, timezone);
+                const checkOutAt = parseTimeToDate(date, config.checkOutTime, timezone);
+                const workedMinutes = diffInMinutes(checkInAt, checkOutAt);
+
+                await tx.attendance.upsert({
+                    where: {
+                        userId_date: {
+                            userId: payload.userId,
+                            date
+                        }
+                    },
+                    update: {
+                        checkInAt,
+                        checkOutAt,
+                        workedMinutes,
+                        status: "OUT_DUTY",
+                        isOutDuty: true,
+                        outDutyReason: payload.reason,
+                        isLate: false,
+                        isOnApprovedLeave: false,
+                        isHoliday: false,
+                        isWeekOff: false,
+                        manuallyUpdatedById: actor.id,
+                        manuallyUpdatedAt: new Date(),
+                        remarks: `Out Duty: ${payload.reason}`
+                    },
+                    create: {
+                        tenantId: actor.tenantId,
+                        userId: payload.userId,
+                        date,
+                        checkInAt,
+                        checkOutAt,
+                        workedMinutes,
+                        status: "OUT_DUTY",
+                        isOutDuty: true,
+                        outDutyReason: payload.reason,
+                        isLate: false,
+                        isOnApprovedLeave: false,
+                        isPaidLeave: false,
+                        isHoliday: false,
+                        isWeekOff: false,
+                        manuallyUpdatedById: actor.id,
+                        manuallyUpdatedAt: new Date(),
+                        remarks: `Out Duty: ${payload.reason}`
+                    }
+                })
+            }
+
+            return outDuty;
+        })
+    }
+
+    static async getOutDuties(actor: any, payload: {
+        userId?: string;
+        startDate?: string;
+        endDate?: string;
+        status?: string;
+    }) {
+        if(!actor?.tenantId){
+            throw new Error("Actor tenant context missing");
+        }
+        const timezone = await getTenantTimezone(actor.tenantId);
+        const where: any = {
+            tenantId: actor.tenantId,
+            ...(payload.userId ? { userId: payload.userId } : {}),
+            ...(payload.status ? { reason: { contains: payload.status } } : {})
+        };
+
+        if(payload.startDate || payload.endDate) {
+            where.startDate = {};
+
+            if(payload.startDate) {
+                where.startDate.gte = getStartOfDay(new Date(payload.startDate), timezone);
+            }
+
+            if(payload.endDate) {
+                where.endDate = {
+                    lte: getEndOfDay(new Date(payload.endDate), timezone)
+                };
+            }
+        }
+
+        return prisma.outDuty.findMany({
+            where,
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true
+                    }
+                },
+                markedBy: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: "desc"
+            }
+        })
+    }
+
+    static async upsertRegularizationPolicy(actor: any, payload: {
+        id?: string;
+        name: string;
+        departmentId?: string | null;
+        designationId?: string | null;
+        approverType: "REPORTING_MANAGER" | "DEPARTMENT_MANAGER" | "COMPANY_ADMIN" | "SPECIFIC_USER";
+        userId?: string | null;
+        isActive?: boolean;
+    }) {
+        if (!actor?.tenantId) {
+            throw new Error("Actor tenant context missing");
+        }
+
+        if (!payload.name?.trim()) {
+            throw new Error("Policy name is required");
+        }
+
+        if (!payload.approverType) {
+            throw new Error("Approver type is required");
+        }
+
+        if (payload.approverType === "SPECIFIC_USER" && !payload.userId) {
+            throw new Error("userId is required for SPECIFIC_USER approver type");
+        }
+
+        if (payload.departmentId) {
+            const department = await prisma.department.findFirst({
+            where: {
+                id: payload.departmentId,
+                tenantId: actor.tenantId
+            }
+            });
+
+            if (!department) {
+            throw new Error("Department not found");
+            }
+        }
+
+        if (payload.designationId) {
+            const designation = await prisma.designation.findFirst({
+            where: {
+                id: payload.designationId,
+                tenantId: actor.tenantId
+            }
+            });
+
+            if (!designation) {
+            throw new Error("Designation not found");
+            }
+        }
+
+        if (payload.userId) {
+            const user = await prisma.user.findFirst({
+            where: {
+                id: payload.userId,
+                tenantId: actor.tenantId,
+                isActive: true
+            }
+            });
+
+            if (!user) {
+            throw new Error("Specific approver user not found");
+            }
+        }
+
+
+        if (payload.id) {
+            const existing = await prisma.attendanceRegularizationPolicy.findFirst({
+            where: {
+                id: payload.id,
+                tenantId: actor.tenantId
+            }
+            });
+
+            if (!existing) {
+            throw new Error("Attendance regularization policy not found");
+            }
+
+            return prisma.attendanceRegularizationPolicy.update({
+            where: { id: payload.id },
+            data: {
+                name: payload.name.trim(),
+                departmentId: payload.departmentId ?? null,
+                designationId: payload.designationId ?? null,
+                approverType: payload.approverType as any,
+                userId: payload.approverType === "SPECIFIC_USER" ? payload.userId : null,
+                isActive: payload.isActive ?? true
+            },
+            include: {
+                department: true,
+                designation: true,
+                user: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true
+                }
+                },
+            }
+            });
+        }
+
+        return prisma.attendanceRegularizationPolicy.upsert({
+            where: {
+            tenantId_name: {
+                tenantId: actor.tenantId,
+                name: payload.name.trim()
+            }
+            },
+            update: {
+            departmentId: payload.departmentId ?? null,
+            designationId: payload.designationId ?? null,
+            approverType: payload.approverType as any,
+            userId: payload.approverType === "SPECIFIC_USER" ? payload.userId : null,
+            isActive: payload.isActive ?? true
+            },
+            create: {
+            tenantId: actor.tenantId,
+            name: payload.name.trim(),
+            departmentId: payload.departmentId ?? null,
+            designationId: payload.designationId ?? null,
+            approverType: payload.approverType as any,
+            userId: payload.approverType === "SPECIFIC_USER" ? payload.userId : null,
+            isActive: payload.isActive ?? true
+            },
+            include: {
+            department: true,
+            designation: true,
+            user: {
+                select: {
+                id: true,
+                name: true,
+                email: true
+                }
+            },
+            }
+        });
+    }
+
+
+    static async getRegularizationPolicies(actor: any) {
+        if (!actor?.tenantId) {
+            throw new Error("Actor tenant context missing");
+        }
+
+        return prisma.attendanceRegularizationPolicy.findMany({
+            where: {
+                tenantId: actor.tenantId
+            },
+            include: {
+                department: {
+                    select: { id: true, name: true }
+                },
+                designation: {
+                    select: { id: true, name: true }
+                },
+                user: {
+                    select: { id: true, name: true, email: true }
+                },
+            },
+            orderBy: {
+                createdAt: "desc"
+            }
+        });
+    }
+
+    private static async resolveAttendanceRegularizationPolicy(
+        tenantId: string,
+        user: any
+    ) {
+        let policy = await prisma.attendanceRegularizationPolicy.findFirst({
+            where: {
+            tenantId,
+            isActive: true,
+            departmentId: user.departmentId ?? null,
+            designationId: user.designationId ?? null
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        if (policy) return policy;
+
+        policy = await prisma.attendanceRegularizationPolicy.findFirst({
+            where: {
+            tenantId,
+            isActive: true,
+            departmentId: user.departmentId ?? null,
+            designationId: null
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        if (policy) return policy;
+
+        policy = await prisma.attendanceRegularizationPolicy.findFirst({
+            where: {
+            tenantId,
+            isActive: true,
+            departmentId: null,
+            designationId: null
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        return policy;
+    }
+
+    static async createRegularizationRequest(actor: any, payload: {
+        date: string;
+        requestedCheckInAt?: string;
+        requestedCheckOutAt?: string;
+        reason: string;
+    }) {
+        if(!actor?.tenantId){
+            throw new Error("Actor tenant context missing");
+        }
+        if(!payload.date){
+            throw new Error("Date is required");
+        }
+
+        const timezone = await getTenantTimezone(actor.tenantId);
+        const attendanceDate = getStartOfDay(new Date(payload.date), timezone);
+
+        const existingPendingRequest = await prisma.attendanceRegularizationRequest.findFirst({
+            where: {
+                tenantId: actor.tenantId,
+                userId: actor.id,
+                date: attendanceDate,
+                status: "PENDING"
+            }
+        });
+
+        if(existingPendingRequest) {
+            throw new Error("A pending regularization request already exists for this date.");
+        }
+
+        const user = await prisma.user.findFirst({
+            where: {
+                id: actor.id,
+                tenantId: actor.tenantId
+            },
+            include: {
+                department: true,
+                employeeProfile: true
+            }
+        });
+        if(!user){
+            throw new Error("User not found");
+        }
+
+        const policy = await this.resolveAttendanceRegularizationPolicy(actor.tenantId, user);
+
+        if(!policy){
+            throw new Error("No attendance regularization policy found for tenant");
+        }
+
+        const attendance = await prisma.attendance.findUnique({
+            where: {
+                userId_date: {
+                    userId: actor.id,
+                    date: attendanceDate
+                }
+            }
+        });
+
+        return prisma.attendanceRegularizationRequest.create({
+            data: {
+            tenantId: actor.tenantId,
+            userId: actor.id,
+            attendanceId: attendance?.id ?? null,
+            date: attendanceDate,
+            requestedCheckInAt: payload.requestedCheckInAt
+                ? new Date(payload.requestedCheckInAt)
+                : null,
+            requestedCheckOutAt: payload.requestedCheckOutAt
+                ? new Date(payload.requestedCheckOutAt)
+                : null,
+            reason: payload.reason.trim(),
+            status: "PENDING",
+            approverType: policy.approverType,
+            approverUserId: policy.userId ?? null,
+            }
+        });
+    }
+
+    static async getMyRegularizationRequests(actor: any) {
+        if (!actor?.tenantId) {
+            throw new Error("Actor tenant context missing");
+        }
+
+        return prisma.attendanceRegularizationRequest.findMany({
+            where: {
+            tenantId: actor.tenantId,
+            userId: actor.id
+            },
+            include: {
+            attendance: true,
+            approvedBy: {
+                select: {
+                id: true,
+                name: true,
+                email: true
+                }
+            },
+            rejectedBy: {
+                select: {
+                id: true,
+                name: true,
+                email: true
+                }
+            }
+            },
+            orderBy: {
+            createdAt: "desc"
+            }
+        });
+    }
+
+    static async getPendingRegularizationApprovals(actor: any) {
+        if (!actor?.tenantId) {
+            throw new Error("Actor tenant context missing");
+        }
+
+        const requests = await prisma.attendanceRegularizationRequest.findMany({
+            where: {
+            tenantId: actor.tenantId,
+            status: "PENDING"
+            },
+            include: {
+            user: {
+                select: {
+                id: true,
+                name: true,
+                email: true,
+                managerId: true,
+                departmentId: true,
+                designationId: true,
+                department: {
+                    select: {
+                    id: true,
+                    name: true,
+                    managerId: true
+                    }
+                },
+                designation: {
+                    select: {
+                    id: true,
+                    name: true
+                    }
+                },
+                employeeProfile: {
+                    select: {
+                    photoUrl: true,
+                    employeeCode: true
+                    }
+                }
+                }
+            },
+            attendance: true,
+            approvedBy: {
+                select: {
+                id: true,
+                name: true,
+                email: true
+                }
+            },
+            rejectedBy: {
+                select: {
+                id: true,
+                name: true,
+                email: true
+                }
+            }
+            },
+            orderBy: {
+            createdAt: "desc"
+            }
+        });
+
+        const allowedRequests = [];
+
+        for (const request of requests) {
+            const canApprove = await this.canApproveRegularization(actor, request);
+
+            if (canApprove) {
+            allowedRequests.push(request);
+            }
+        }
+
+        return allowedRequests;
+    }
+
+    private static async canApproveRegularization(actor: any, request: any) {
+        const requester = request.user;
+
+        if(request.approverType === "SPECIFIC_USER"){
+            return request.approverUserId === actor.id;
+        }
+        if(request.approverType === "REPORTING_MANAGER"){
+            return requester.managerId === actor.id;
+        }
+        if(request.approverType === "DEPARTMENT_MANAGER"){
+            const department = await prisma.department.findFirst({
+                where:{
+                    id: requester.departmentId,
+                    tenantId: actor.tenantId
+                }
+            });
+
+            return department?.managerId === actor.id
+        }
+
+        if (request.approverType === "COMPANY_ADMIN") {
+            const adminRole = await prisma.userRole.findFirst({
+            where: {
+                userId: actor.id,
+                role: {
+                tenantId: actor.tenantId,
+                name: "COMPANY_ADMIN",
+                type: "TENANT"
+                }
+            }
+            });
+
+            return Boolean(adminRole);
+        }
+
+        return false
+    }
+
+    static async approveRegularization(
+        actor: any,
+        requestId: string,
+        remarks?: string
+    ) {
+        if(!actor.tenantId){
+            throw new Error ("Actor tenant context missing");
+        }
+
+        return prisma.$transaction(async (tx) => {
+            const request = await tx.attendanceRegularizationRequest.findFirst({
+                where: {
+                    id: requestId,
+                    tenantId: actor.tenantId,
+                    status: "PENDING"
+                },
+                include: {
+                    user: true,
+                    attendance: true
+                }
+            });
+
+            if(!request){
+                throw new Error("Regularization request not found");
+            }
+
+            const canApprove = await this.canApproveRegularization(actor, request);
+
+            if(!canApprove){
+                throw new Error("You don't have permission to approve this request");
+            }
+
+            const config = await tx.attendanceConfig.findFirst({
+                where: {
+                    tenantId: actor.tenantId
+                }
+            });
+
+            if(!config){
+                throw new Error("Attendance configuration not found for tenant");
+            }
+
+            const checkInAt = request.requestedCheckInAt;
+            const checkOutAt = request.requestedCheckOutAt;
+
+            const workedMinutes = checkInAt && checkOutAt ? diffInMinutes(checkInAt, checkOutAt) : 0;
+
+            let finalStatus: any = "REGULARIZED";
+
+            if (checkInAt && checkOutAt) {
+                if (workedMinutes < (config.halfDayMinutes ?? 240)) {
+                    finalStatus = "ABSENT";
+                } else if (workedMinutes < (config.fullDayMinutes ?? 480)) {
+                    finalStatus = "HALF_DAY";
+                } else {
+                    finalStatus = "REGULARIZED";
+                }
+            }
+
+            await tx.attendance.upsert({
+                where: {
+                    userId_date: {
+                    userId: request.userId,
+                    date: request.date
+                    }
+                },
+                update: {
+                    checkInAt: checkInAt ?? undefined,
+                    checkOutAt: checkOutAt ?? undefined,
+                    workedMinutes,
+                    status: finalStatus,
+                    isLate: false,
+                    regularizedById: actor.id,
+                    regularizedAt: new Date(),
+                    regularizationReason: request.reason,
+                    manuallyUpdatedById: actor.id,
+                    manuallyUpdatedAt: new Date(),
+                    remarks: `Regularized: ${request.reason}`
+                },
+                create: {
+                    tenantId: actor.tenantId,
+                    userId: request.userId,
+                    date: request.date,
+                    checkInAt,
+                    checkOutAt,
+                    workedMinutes,
+                    status: finalStatus,
+                    isLate: false,
+                    isOnApprovedLeave: false,
+                    isPaidLeave: false,
+                    isHoliday: false,
+                    isWeekOff: false,
+                    regularizedById: actor.id,
+                    regularizedAt: new Date(),
+                    regularizationReason: request.reason,
+                    manuallyUpdatedById: actor.id,
+                    manuallyUpdatedAt: new Date(),
+                    remarks: `Regularized: ${request.reason}`
+                }
+            });
+
+            return tx.attendanceRegularizationRequest.update({
+                where: { id: request.id },
+                data: {
+                    status: "APPROVED",
+                    approvedById: actor.id,
+                    approvedAt: new Date()
+                }
+            });
+        })
+    }
+
+    static async rejectRegularization(
+        actor: any,
+        requestId: string,
+        remarks?: string
+    ) {
+        if(!actor.tenantId){
+            throw new Error ("Actor tenant context missing");
+        }
+
+        const request = await prisma.attendanceRegularizationRequest.findFirst({
+            where: {
+                id: requestId,
+                tenantId: actor.tenantId,
+                status: "PENDING"
+            },
+            include: {
+                user: true
+            }
+        });
+
+        if(!request){
+            throw new Error("Regularization request not found");
+        }
+
+        const canApprove = await this.canApproveRegularization(actor, request);
+
+        if(!canApprove){
+            throw new Error("You'r not allowed to reject this request");
+        }
+
+
+
+        return prisma.attendanceRegularizationRequest.update({
+            where: { id: request.id },
+            data: {
+                status: "REJECTED",
+                rejectedById: actor.id,
+                rejectedAt: new Date(),
+                reason: remarks ?? "No reason provided"
+            }
+        });
     }
 }

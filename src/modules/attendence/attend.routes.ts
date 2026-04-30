@@ -77,4 +77,59 @@ router.get(
     attendController.getMonthSummary
 )
 
+
+/** --------- OUT DUTIES ------------------ */
+router.post(
+  "/out-duty",
+  checkPermission("ATTENDANCE:CONFIGURE"),
+  attendController.markOutDuty
+);
+
+router.get(
+  "/out-duty",
+  checkPermission("ATTENDANCE:READ"),
+attendController.getOutDuties
+);
+
+/** ----------- REGULARIZATION REQUESTS ------------------ */
+router.post(
+  "/regularization/policy",
+  checkPermission("ATTENDANCE:CONFIGURE"),
+  attendController.upsertRegularizationPolicy
+);
+
+router.get(
+  "/regularization/policy",
+  checkPermission("ATTENDANCE:READ"),
+  attendController.getRegularizationPolicies
+);
+router.post(
+  "/regularization/request",
+  checkPermission("ATTENDANCE:REGULARIZATION_REQUEST"),
+  attendController.createRegularizationRequest
+);
+
+router.get(
+  "/regularization/my-requests",
+  checkPermission("ATTENDANCE:REGULARIZATION_REQUEST"),
+  attendController.getMyRegularizationRequests
+);
+
+router.get(
+  "/regularization/pending-approvals",
+  checkPermission("ATTENDANCE:CONFIGURE"),
+  attendController.getPendingRegularizationApprovals
+);
+
+router.patch(
+  "/regularization/:requestId/approve",
+  checkPermission("ATTENDANCE:CONFIGURE"),
+  attendController.approveRegularizationRequest
+);
+
+router.patch(
+  "/regularization/:requestId/reject",
+  checkPermission("ATTENDANCE:CONFIGURE"),
+  attendController.rejectRegularizationRequest
+);
 export default router;

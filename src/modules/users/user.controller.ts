@@ -7,6 +7,7 @@ import { fillTemplate } from "../utils/util";
 import { ONBOARDING_TEMPLATE } from "../utils/mail.template";
 import { sendMail } from "../../core/service/mail.service";
 import { EmploymentType } from "@prisma/client";
+import { deleteFromS3, uploadToS3 } from "../../config/s3/s3.config";
 
 /** Will return all the active users for the current tenant */
 /**
@@ -201,8 +202,24 @@ export const getUserDetails = async (req: Request, res: Response) => {
                 id: true,
                 name: true,
                 email: true,
+                personalEmail: true,
+                phone: true,
                 isActive: true,
                 tenantId: true,
+                employeeProfile: {
+                    include: {
+                        familyMembers: {
+                            orderBy: { createdAt: "desc" }
+                        },
+                        qualifications: {
+                            orderBy: { createdAt: "desc" }
+                        },
+                        experiences: {
+                            orderBy: { createdAt: "desc" }
+                        }
+                    }
+                },
+                bankAccount: true,
                 manager: {
                     select: {
                         id: true,
@@ -264,94 +281,85 @@ export const getUserDetails = async (req: Request, res: Response) => {
 
 /**
  * @swagger
- * /users/update/{userId}:
+ * /users/update:
  *   put:
  *     tags:
  *       - users
- *     summary: Update user details
- *     description: Update the details and employee profile of a user by userId.
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *         description: The ID of the user to update
+ *     summary: Update my profile
+ *     description: Update the logged-in user's profile, address, personal details, profile photo, and optional bank details. Profile photo must be uploaded as multipart file using the field name photoUrl.
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
  *             properties:
  *               name:
  *                 type: string
+ *                 example: Rahul Sharma
  *               phone:
  *                 type: string
- *               departmentId:
- *                 type: string
- *               designationId:
- *                 type: string
- *               managerId:
- *                 type: string
- *               isActive:
- *                 type: boolean
- *               employeeCode:
- *                 type: string
- *               employmentType:
- *                 type: string
- *                 enum:
- *                   - FULL_TIME
- *                   - TRAINEE
- *                   - INTERN
- *                   - CONTRACT
- *                   - OTHER
- *               joiningDate:
- *                 type: string
- *                 format: date
- *               probationMonths:
- *                 type: number
- *               salary:
- *                 type: number
+ *                 example: "+919876543210"
  *               dateOfBirth:
  *                 type: string
  *                 format: date
+ *                 example: 1995-08-20
+ *               bloodGroup:
+ *                 type: string
+ *                 example: O+
+ *               photoUrl:
+ *                 type: string
+ *                 format: binary
+ *                 description: Profile photo file. Use this field name with multer upload.single("photoUrl").
  *               addressLine1:
  *                 type: string
+ *                 example: 12 Park Street
  *               addressLine2:
  *                 type: string
+ *                 example: Flat 3B
  *               city:
  *                 type: string
+ *                 example: Kolkata
  *               state:
  *                 type: string
+ *                 example: West Bengal
  *               country:
  *                 type: string
+ *                 example: India
  *               pinCode:
  *                 type: string
+ *                 example: "700016"
  *               panNumber:
  *                 type: string
+ *                 example: ABCDE1234F
  *               aadhaarNumber:
  *                 type: string
+ *                 example: "123456789012"
+ *               bankDetails:
+ *                 type: string
+ *                 description: JSON string containing bank details.
+ *                 example: '{"accountHolderName":"Rahul Sharma","accountNumber":"1234567890","bankName":"HDFC Bank","ifscCode":"HDFC0001234","branchName":"Kolkata","upiId":"rahul@upi"}'
  *     responses:
  *       200:
- *         description: Employee updated successfully
- *       400:
- *         description: Invalid employment type
- *       403:
- *         description: Forbidden - cannot update employee from another tenant
+ *         description: Profile updated successfully
+ *       401:
+ *         description: Unauthorized
  *       404:
- *         description: Employee not found
+ *         description: User not found
  *       500:
- *         description: Failed to update user
+ *         description: Failed to update profile
  */
 export const updateMyProfile = async (req: Request, res: Response) => {
     try {
         const actor = (req as any).user;
-
+        const file = (req as any).file;
         const {
             name,
             phone,
             dateOfBirth,
+            bloodGroup,
             addressLine1,
             addressLine2,
             city,
@@ -359,7 +367,8 @@ export const updateMyProfile = async (req: Request, res: Response) => {
             country,
             pinCode,
             panNumber,
-            aadhaarNumber
+            aadhaarNumber,
+            bankDetails
         } = req.body;
 
         const targetUser = await prisma.user.findUnique({
@@ -375,6 +384,26 @@ export const updateMyProfile = async (req: Request, res: Response) => {
                 message: "User not found"
             });
         }
+        let uploadedPhotoUrl: string | undefined;
+
+        if(file){
+            if(targetUser.employeeProfile?.photoUrl){
+                await deleteFromS3(targetUser.employeeProfile.photoUrl)
+            }
+
+            uploadedPhotoUrl = await uploadToS3(
+                {
+                    buffer: file.buffer,
+                    mimetype: file.mimetype,    
+                },
+                actor.tenantId,
+                "employee-profile-photos",
+            );
+        }
+
+        const parsedBankDetails = typeof bankDetails === "string" ? JSON.parse(bankDetails) : bankDetails;
+
+
 
         const result = await prisma.$transaction(async (tx) => {
             const updatedUser = await tx.user.update({
@@ -389,6 +418,8 @@ export const updateMyProfile = async (req: Request, res: Response) => {
                 where: { userId: actor.id },
                 update: {
                     dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+                    bloodGroup: bloodGroup ?? undefined,
+                    photoUrl: uploadedPhotoUrl ?? undefined,
                     addressLine1: addressLine1 ?? undefined,
                     addressLine2: addressLine2 ?? undefined,
                     city: city ?? undefined,
@@ -401,6 +432,8 @@ export const updateMyProfile = async (req: Request, res: Response) => {
                 create: {
                     userId: actor.id,
                     dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+                    bloodGroup: bloodGroup ?? null,
+                    photoUrl: uploadedPhotoUrl ?? null,
                     addressLine1: addressLine1 ?? null,
                     addressLine2: addressLine2 ?? null,
                     city: city ?? null,
@@ -412,7 +445,31 @@ export const updateMyProfile = async (req: Request, res: Response) => {
                 }
             });
 
-            return { updatedUser, updatedProfile };
+            let updatedBankDetails = null;
+            if(parsedBankDetails){
+                updatedBankDetails = await tx.employeeBankAccount.upsert({
+                    where: { userId: actor.id },
+                    update: {
+                        accountHolderName: parsedBankDetails.accountHolderName ?? undefined,
+                        accountNumber: parsedBankDetails.accountNumber ?? undefined,
+                        bankName: parsedBankDetails.bankName ?? undefined,
+                        ifscCode: parsedBankDetails.ifscCode ?? undefined,
+                        branchName: parsedBankDetails.branchName ?? undefined,
+                        upiId: parsedBankDetails.upiId ?? undefined
+                    },
+                    create: {
+                        userId: actor.id,
+                        accountHolderName: parsedBankDetails.accountHolderName ?? null,
+                        accountNumber: parsedBankDetails.accountNumber ?? null,
+                        bankName: parsedBankDetails.bankName ?? null,
+                        ifscCode: parsedBankDetails.ifscCode ?? null,
+                        branchName: parsedBankDetails.branchName ?? null,
+                        upiId: parsedBankDetails.upiId ?? null
+                    }
+                })
+            }
+
+            return { updatedUser, updatedProfile, updatedBankDetails };
         });
 
         return res.status(200).json({
@@ -569,6 +626,336 @@ export const adminUpdateEmployee = async (req: Request, res: Response) => {
     }
 };
 
+/**
+ * @swagger
+ * /users/family-details:
+ *   put:
+ *     tags:
+ *       - users
+ *     summary: Update family details
+ *     description: Replaces all existing family members with the provided list. Pass an empty array to clear all records.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - familyMembers
+ *             properties:
+ *               familyMembers:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - relation
+ *                     - name
+ *                   properties:
+ *                     relation:
+ *                       type: string
+ *                       example: Spouse
+ *                     name:
+ *                       type: string
+ *                       example: Jane Doe
+ *                     dateOfBirth:
+ *                       type: string
+ *                       format: date
+ *                       example: 1990-05-15
+ *                     phone:
+ *                       type: string
+ *                       example: "+919876543210"
+ *                     email:
+ *                       type: string
+ *                       example: jane@example.com
+ *                     occupation:
+ *                       type: string
+ *                       example: Teacher
+ *                     isDependent:
+ *                       type: boolean
+ *                       example: true
+ *     responses:
+ *       200:
+ *         description: Family details updated successfully
+ *       400:
+ *         description: familyMembers must be an array
+ *       500:
+ *         description: Failed to update family details
+ */
+export const updateFamilyDetails = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const { familyMembers } = req.body;
+
+        if(!Array.isArray(familyMembers)){
+            return res.status(400).json({
+                status: false,
+                message: "familyMembers must be an array"
+            });
+        }
+
+        const profile  = await prisma.employeeProfile.upsert({
+            where: { userId: actor.id },
+            update: {},
+            create: { userId: actor.id }
+        });
+
+        await prisma.$transaction(async(tx) => {
+            await tx.employeeFamilyMember.deleteMany({
+                where: { employeeProfileId: profile.id }
+            });
+
+            if(familyMembers.length > 0){
+                await tx.employeeFamilyMember.createMany({
+                    data: familyMembers.map((member: any) => ({
+                        employeeProfileId: profile.id,
+                        relation: member.relation,
+                        name: member.name,
+                        dateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth) : null,
+                        phone: member.phone ?? null,
+                        email: member.email ?? null,
+                        occupation: member.occupation ?? null,
+                        isDependent: member.isDependent ?? false
+                    }))
+                })
+            }
+        });
+
+        const result = await prisma.employeeFamilyMember.findMany({
+            where: { employeeProfileId: profile.id }
+        });
+
+        return res.status(200).json({
+            status: true,
+            message: "Family details updated successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to update family details",
+            error: error.message
+        });
+    }
+}
+
+/**
+ * @swagger
+ * /users/qualification-details:
+ *   put:
+ *     tags:
+ *       - users
+ *     summary: Update qualification details
+ *     description: Replaces all existing qualifications with the provided list. Pass an empty array to clear all records.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - qualifications
+ *             properties:
+ *               qualifications:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - degree
+ *                   properties:
+ *                     degree:
+ *                       type: string
+ *                       example: B.Tech
+ *                     institution:
+ *                       type: string
+ *                       example: IIT Delhi
+ *                     fieldOfStudy:
+ *                       type: string
+ *                       example: Computer Science
+ *                     startYear:
+ *                       type: integer
+ *                       example: 2015
+ *                     endYear:
+ *                       type: integer
+ *                       example: 2019
+ *                     grade:
+ *                       type: string
+ *                       example: 8.5 CGPA
+ *     responses:
+ *       200:
+ *         description: Qualification details updated successfully
+ *       400:
+ *         description: qualifications must be an array
+ *       500:
+ *         description: Failed to update qualification details
+ */
+export const updateQualificationDetails = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const { qualifications } = req.body;
+
+        if(!Array.isArray(qualifications)){
+            return res.status(400).json({
+                status: false,
+                message: "qualifications must be an array"
+            });
+        }
+
+        const profile  = await prisma.employeeProfile.upsert({
+            where: { userId: actor.id },
+            update: {},
+            create: { userId: actor.id }
+        });
+
+        await prisma.$transaction(async(tx) => {
+            await tx.employeeQualification.deleteMany({
+                where: { employeeProfileId: profile.id }
+            });
+
+            if(qualifications.length > 0){
+                await tx.employeeQualification.createMany({
+                    data: qualifications.map((q: any) => ({
+                        employeeProfileId: profile.id,
+                        degree: q.degree,
+                        institution: q.institution ?? null,
+                        fieldOfStudy: q.fieldOfStudy ?? null,
+                        startYear: q.startYear ? Number(q.startYear) : null,
+                        endYear: q.endYear ? Number(q.endYear) : null,
+                        grade: q.grade ?? null
+                    }))
+                })
+            }
+        });
+
+        const result = await prisma.employeeQualification.findMany({
+            where: { employeeProfileId: profile.id }
+        });
+
+        return res.status(200).json({
+            status: true,
+            message: "Qualification details updated successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to update qualification details",
+            error: error.message
+        });
+    }
+}
+
+/**
+ * @swagger
+ * /users/experience-details:
+ *   put:
+ *     tags:
+ *       - users
+ *     summary: Update experience details
+ *     description: Replaces all existing experience records with the provided list. Pass an empty array to clear all records.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - experiences
+ *             properties:
+ *               experiences:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - companyName
+ *                     - designation
+ *                   properties:
+ *                     companyName:
+ *                       type: string
+ *                       example: Acme Corp
+ *                     designation:
+ *                       type: string
+ *                       example: Software Engineer
+ *                     startDate:
+ *                       type: string
+ *                       format: date
+ *                       example: 2019-06-01
+ *                     endDate:
+ *                       type: string
+ *                       format: date
+ *                       example: 2023-03-31
+ *                     responsibilities:
+ *                       type: string
+ *                       example: Developed REST APIs and managed deployments
+ *     responses:
+ *       200:
+ *         description: Experience details updated successfully
+ *       400:
+ *         description: experiences must be an array
+ *       500:
+ *         description: Failed to update experience details
+ */
+export const updateExperienceDetails = async (req: Request, res: Response) => {
+    try {
+        const actor = (req as any).user;
+        const { experiences } = req.body;
+
+        if(!Array.isArray(experiences)){
+            return res.status(400).json({
+                status: false,
+                message: "experiences must be an array"
+            });
+        }
+
+        const profile  = await prisma.employeeProfile.upsert({
+            where: { userId: actor.id },
+            update: {},
+            create: { userId: actor.id }
+        });
+
+        await prisma.$transaction(async(tx) => {
+            await tx.employeeExperience.deleteMany({
+                where: { employeeProfileId: profile.id }
+            });
+
+            if(experiences.length > 0){
+                await tx.employeeExperience.createMany({
+                    data: experiences.map((exp: any) => ({
+                        employeeProfileId: profile.id,
+                        companyName: exp.companyName,
+                        jobTitle: exp.jobTitle ?? exp.designation ?? null,
+                        startDate: exp.startDate ? new Date(exp.startDate) : null,
+                        endDate: exp.endDate ? new Date(exp.endDate) : null,
+                        isCurrent: exp.isCurrent ?? false,
+                        description: exp.description ?? exp.responsibilities ?? null
+                    }))
+                })
+            }
+        });
+
+        const result = await prisma.employeeExperience.findMany({
+            where: { employeeProfileId: profile.id },
+            orderBy: { startDate: "desc" }
+        });
+
+        return res.status(200).json({
+            status: true,
+            message: "Experience details updated successfully",
+            data: result
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            status: false,
+            message: "Failed to update experience details",
+            error: error.message
+        });
+    }
+}
 
 
 /**
@@ -698,6 +1085,9 @@ export const deleteUser = async (req: Request, res: Response) => {
  *                 format: date
  *               proposedSalary:
  *                 type: number
+ *               sourceOfHire:
+ *                 type: string
+ *                 enum: [DIRECT, REFERRAL, JOB_PORTAL, LINKEDIN, CONSULTANCY, CAMPUS, WALK_IN, OTHER]
  *     responses:
  *       201:
  *         description: Onboarding invite created successfully
@@ -725,8 +1115,30 @@ export const createOnboardingInvite = async (req: Request, res: Response) => {
             employeeCode,
             joiningDate,
             employmentType,
+            sourceOfHire,
             proposedSalary
         } = req.body;
+
+        const allowedSourceOfHire = [
+            "DIRECT",
+            "REFERRAL",
+            "JOB_PORTAL",
+            "LINKEDIN",
+            "CONSULTANCY",
+            "CAMPUS",
+            "WALK_IN",
+            "OTHER"
+        ];
+
+        if (
+            sourceOfHire !== undefined &&
+            !allowedSourceOfHire.includes(String(sourceOfHire).toUpperCase())
+        ) {
+            return res.status(400).json({
+                status: false,
+                message: "Invalid sourceOfHire"
+            });
+        }
 
         const policyDecision = await OnboardPolicy.canInvite(actor, {
             email,
@@ -802,6 +1214,10 @@ export const createOnboardingInvite = async (req: Request, res: Response) => {
                 firstName: firstName ? String(firstName).trim() : null,
                 lastName: lastName ? String(lastName).trim() : null,
                 phone: phone ? String(phone).trim() : null,
+
+                sourceOfHire: sourceOfHire
+                ? String(sourceOfHire).toUpperCase() as any
+                : null,
 
                 departmentId: departmentId || null,
                 designationId: finalDesignationId,
@@ -1372,6 +1788,7 @@ export const acceptOnboardingInvite = async (req: Request, res: Response) => {
                     userId: newUser.id,
                     employeeCode: invite.employeeCode,
                     joiningDate: invite.joiningDate || null,
+                    sourceOfHire: invite.sourceOfHire,
                     salary: invite.proposedSalary ?? null
                 }
             })
@@ -1382,6 +1799,21 @@ export const acceptOnboardingInvite = async (req: Request, res: Response) => {
                     completedAt: new Date()
                 }
             })
+            await tx.feed.create({
+                data: {
+                    tenantId: invite.tenantId,
+                    subjectedUserId: newUser.id,
+                    departmentId: newUser.departmentId,
+                    type: "EVENT",
+                    content: null,
+                    metadata: {
+                        event: "NEW_JOINING",
+                        message: `${newUser.name} joined the team`,
+                        designationId: newUser.designationId,
+                        departmentId: newUser.departmentId
+                    }
+                }
+            });
             return newUser;
         });
 

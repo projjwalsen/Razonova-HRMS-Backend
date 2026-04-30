@@ -8,6 +8,7 @@ import routes from './routes/index'
 import { swaggerSpec } from './config/swagger/swagger';
 import bcrypt from "bcrypt";
 import { EmploymentType, RoleType, TenantStatus } from '@prisma/client';
+import { startCrons } from './core/service/cron.job';
 
 const app = express();
 
@@ -357,4 +358,7 @@ app.get('/health', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
 	console.log(`✅ Server running on port ${PORT}`);
+	if(process.env.CRON_ENABLED === "true"){
+		startCrons();
+	}
 });

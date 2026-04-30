@@ -392,3 +392,157 @@ export const RESET_PASSWORD_TEMPLATE = `<!DOCTYPE html>
   </body>
 </html>
 `;
+
+export const CONTACT_US_EMAIL_TEMPLATE = `
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>New Contact Enquiry</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: #f2f4f7;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      .wrapper {
+        max-width: 640px;
+        margin: 28px auto;
+        background: #f2f4f7;
+      }
+      .topbar {
+        background: #0a1628;
+        padding: 18px 32px;
+        color: #fff;
+      }
+      .topbar-title {
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .hero {
+        background: #1a2f52;
+        padding: 32px;
+        border-top: 3px solid #2563eb;
+      }
+      .hero h1 {
+        color: #fff;
+        font-size: 22px;
+        margin: 0 0 8px;
+      }
+      .hero p {
+        color: #cbd5e1;
+        font-size: 13px;
+        margin: 0;
+      }
+      .card {
+        background: #fff;
+        padding: 32px;
+      }
+      .card p {
+        font-size: 14px;
+        color: #374151;
+        line-height: 1.7;
+        margin: 0 0 18px;
+      }
+      .info-table {
+        width: 100%;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        overflow: hidden;
+        margin: 10px 0 24px;
+      }
+      .info-row {
+        display: flex;
+        border-bottom: 1px solid #f1f5f9;
+      }
+      .info-row:last-child {
+        border-bottom: none;
+      }
+      .info-label {
+        width: 34%;
+        padding: 12px 16px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #64748b;
+        background: #f8fafc;
+        border-right: 1px solid #f1f5f9;
+        text-transform: uppercase;
+      }
+      .info-value {
+        flex: 1;
+        padding: 12px 16px;
+        font-size: 13px;
+        color: #0f172a;
+        font-weight: 500;
+        word-break: break-word;
+      }
+      .query-box {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 18px;
+        color: #1f2937;
+        font-size: 14px;
+        line-height: 1.8;
+        white-space: pre-line;
+      }
+      .footer {
+        background: #eff6ff;
+        padding: 18px 32px;
+        text-align: center;
+        border-top: 1px solid #bfdbfe;
+      }
+      .footer p {
+        font-size: 11px;
+        color: #475569;
+        margin: 3px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="topbar">
+        <div class="topbar-title">{{hrmsName}} Contact Enquiry</div>
+      </div>
+
+      <div class="hero">
+        <h1>New Contact Us Request</h1>
+        <p>A visitor submitted a query through the website/contact form.</p>
+      </div>
+
+      <div class="card">
+        <p>Hello Team,</p>
+        <p>
+          A new contact enquiry has been submitted. Please review the details
+          below and follow up with the user.
+        </p>
+
+        <div class="info-table">
+          <div class="info-row">
+            <div class="info-label">Email</div>
+            <div class="info-value">{{email}}</div>
+          </div>
+          <div class="info-row">
+            <div class="info-label">Phone</div>
+            <div class="info-value">{{phone}}</div>
+          </div>
+          <div class="info-row">
+            <div class="info-label">Company</div>
+            <div class="info-value">{{companyName}}</div>
+          </div>
+        </div>
+
+        <p><strong>User Query</strong></p>
+        <div class="query-box">{{query}}</div>
+      </div>
+
+      <div class="footer">
+        <p>© 2026 {{hrmsName}}. All rights reserved.</p>
+        <p>This message was generated from the Contact Us form.</p>
+      </div>
+    </div>
+  </body>
+</html>
+`

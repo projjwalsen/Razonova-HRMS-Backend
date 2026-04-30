@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createDepartment, createDesignation, createOrganizationInfo, createOrganizationSettings, deleteDepartment, deleteDesignation, getAllDepartments, getDesignations, getOrganizationInfo, getOrganizationSettings, getPermissions, getTenantCurrency, updateDepartment, updateDesignation, updateOrganizationInfo, upsertOrganizationSettings } from "./org.controller";
+import { createDepartment, createDesignation, createOrganizationInfo, createOrganizationSettings, deleteDepartment, deleteDesignation, getAllDepartments, getDesignations, getOrganizationInfo, getOrganizationSettings, getPermissions, getTenantCurrency, orgDashboardKpis, updateDepartment, updateDesignation, updateOrganizationInfo, upsertOrganizationSettings } from "./org.controller";
 import { auth, checkPermission } from "../../core/middleware/auth";
 import { createFileUpload } from "../../core/service/multer.service";
 import RoleRoute from "../access-control/role.routes"
@@ -8,6 +8,8 @@ import ReportingRoute from "../reporting/reporting.routes";
 import AttendRoute from "../attendence/attend.routes";
 import LeaveRoute from "../leave/leave.routes";
 import PayrollRoute from "../payroll/payroll.routes"
+import AnnouncementRoute from "../feeds/feed.routes";
+import ResignationRoute from "./resignation.routes";
 
 const router = Router();
 
@@ -17,7 +19,8 @@ router.use("/users", UserRoute);
 router.use("/attendance", AttendRoute);
 router.use("/leave", LeaveRoute);
 router.use("/payroll", PayrollRoute);
-
+router.use("/resignations", ResignationRoute);
+router.use("/feed-wall", AnnouncementRoute)
 
 const upload = createFileUpload({
     maxSize: 12, // 12MB
@@ -108,6 +111,11 @@ router.get(
 router.get(
     "/settings/currency",
     getTenantCurrency
+);
+
+router.get(
+  "/dashboard/kpis",
+  orgDashboardKpis
 );
 
 export default router;

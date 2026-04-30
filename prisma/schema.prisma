@@ -46,11 +46,19 @@ model Tenant {
   leaveBalance          LeaveBalance[]
   holidayCalendars      HolidayCalendar[]
   holidays              Holiday[]
+  outDuties             OutDuty[]
+  feeds                 Feed[]
 
   payrolls      Payroll[]
   payStructures PayStructure[]
   payrollComponentMasters PayrollComponentMaster[]
   employeePayrollComponents employeePayrollComponent[]
+
+  attendanceRegularizationPolicies AttendanceRegularizationPolicy[]
+  attendanceRegularizationRequests AttendanceRegularizationRequest[]
+
+  resignationRequests ResignationRequest[]
+  resignationApprovalPolicies ResignationApprovalPolicy[]
 }
 
 enum RoleType {
@@ -103,7 +111,8 @@ model RolePermission {
 model User {
   id       String  @id @default(uuid())
   name     String
-  email    String  @unique
+  email    String  @unique // 
+  personalEmail String? @unique
   phone    String? @unique
   password String
 
@@ -145,6 +154,25 @@ model User {
   bankAccount               EmployeeBankAccount?
   leaveBalances             LeaveBalance[]
   employeePayrollComponents employeePayrollComponent[]
+
+  outDuties    OutDuty[]
+  markOutDuties OutDuty[] @relation("OutDutyMarkedBy")
+
+  attendanceRegularizationRequests AttendanceRegularizationRequest[] @relation("AttendanceRegularizationRequester")
+  approvedAttendanceRegularizations AttendanceRegularizationRequest[] @relation("AttendanceRegularizationApprovedBy")
+  rejectedAttendanceRegularizations AttendanceRegularizationRequest[] @relation("AttendanceRegularizationRejectedBy")
+  attendanceRegularizationPolicies AttendanceRegularizationPolicy[] @relation("AttendanceRegularizationPolicySpecificUser")
+
+  createdFeeds Feed[] @relation("FeedActor")// feeds created by the user
+  subjectFeeds Feed[] @relation("FeedSubjectUser") // feeds where the user is tagged or mentioned
+
+  resignationRequests ResignationRequest[] @relation("ResignationRequester")
+  approvedResignations ResignationRequest[] @relation("ResignationApprovedBy")
+  rejectedResignations ResignationRequest[] @relation("ResignationRejectedBy")
+  resignationApprovalPolicies ResignationApprovalPolicy[] @relation("ResignationPolicySpecificUser")
+
+  feedComments FeedComment[]
+  feedReactions FeedReaction[]
 }
 
 model UserRole {
@@ -216,6 +244,9 @@ model Department {
   onboardingInvites     OnboardingInvite[]
   payStructures         PayStructure[]
   leaveApprovalPolicies LeaveApprovalPolicy[]
+  attendanceRegularizationPolicies AttendanceRegularizationPolicy[]
+  resignationApprovalPolicies ResignationApprovalPolicy[]
+  feeds                  Feed[]
 
   @@unique([name, tenantId]) // Ensure department names are unique within a tenant
 }
@@ -237,6 +268,8 @@ model Designation {
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
   leaveApprovalPolicies LeaveApprovalPolicy[]
+  attendanceRegularizationPolicies AttendanceRegularizationPolicy[]
+  resignationApprovalPolicies ResignationApprovalPolicy[]
 
   @@unique([name, tenantId]) // unique designation names per tenant
 }
@@ -356,6 +389,8 @@ model OnboardingInvite {
   joiningDate    DateTime?
   proposedSalary Float?
 
+  sourceOfHire String? // e.g., LinkedIn, Referral, Job Portal
+
   submittedAt DateTime?
   completedAt DateTime?
 
@@ -381,6 +416,9 @@ model EmployeeProfile {
   salary      Float?
   dateOfBirth DateTime?
 
+  bloodGroup   String?
+  photoUrl     String?
+
   panNumber    String? @unique
   aadharNumber String? @unique
 
@@ -391,8 +429,84 @@ model EmployeeProfile {
   country      String?
   pinCode      String?
 
+  sourceOfHire String? // e.g., LinkedIn, Referral, Job Portal
+
+  exitDate DateTime?
+  exitReason String?
+
+  familyMembers  EmployeeFamilyMember[]
+  experiences    EmployeeExperience[]
+  qualifications EmployeeQualification[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum FamilyRelation {
+  FATHER
+  MOTHER
+  SPOUSE
+  CHILD
+  SIBLING
+  OTHER
+}
+
+model EmployeeFamilyMember {
+  id String @id @default(uuid())
+
+  employeeProfileId String
+  employeeProfile   EmployeeProfile @relation(fields: [employeeProfileId], references: [id])
+
+  relation       FamilyRelation
+  name           String
+  dateOfBirth    DateTime?
+  phone  String?
+  email          String?
+  occupation     String?
+  isDependent    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeProfileId])
+}
+
+model EmployeeExperience {
+  id String @id @default(uuid())
+
+  employeeProfileId String
+  employeeProfile   EmployeeProfile @relation(fields: [employeeProfileId], references: [id])
+
+  companyName  String
+  jobTitle     String?
+  startDate    DateTime?
+  endDate      DateTime?
+  isCurrent     Boolean @default(false)
+  description   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeProfileId])
+}
+
+model EmployeeQualification {
+  id String @id @default(uuid())
+
+  employeeProfileId String
+  employeeProfile   EmployeeProfile @relation(fields: [employeeProfileId], references: [id])
+
+  degree       String
+  institution   String?
+  fieldOfStudy String?
+  startYear    Int?
+  endYear      Int?
+  grade        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeProfileId])
 }
 
 enum AttendanceStatus {
@@ -403,6 +517,8 @@ enum AttendanceStatus {
   ON_LEAVE
   HOLIDAY
   WEEK_OFF
+  OUT_DUTY
+  REGULARIZED
 }
 
 model AttendanceConfig {
@@ -418,10 +534,89 @@ model AttendanceConfig {
   halfDayMinutes Int @default(240) // minutes threshold for half-day - 4 hours
   fullDayMinutes Int @default(480) // minutes threshold for full-day - 8 hours
 
+  locationEnabled Boolean @default(false)
+
   workingDays    Json // e.g., ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model AttendanceRegularizationPolicy {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  name     String
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  designationId String?
+  designation   Designation? @relation(fields: [designationId], references: [id])
+
+  approverType LeaveApproverType
+
+  userId String? // if approverType is SPECIFIC_USER
+  user   User?   @relation("AttendanceRegularizationPolicySpecificUser",fields: [userId], references: [id])
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId, departmentId, designationId, isActive])
+}
+
+enum RegularizationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model AttendanceRegularizationRequest {
+id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  userId String
+  user   User @relation("AttendanceRegularizationRequester",fields: [userId], references: [id])
+
+  attendanceId String?
+  attendance   Attendance? @relation(fields: [attendanceId], references: [id])
+
+  date DateTime
+
+  requestedCheckInAt DateTime?
+  requestedCheckOutAt DateTime?
+
+  reason String
+
+  status RegularizationStatus @default(PENDING)
+
+  approvedById String?
+  approvedBy   User? @relation("AttendanceRegularizationApprovedBy", fields: [approvedById], references: [id])
+
+  rejectedById String?
+  rejectedBy   User? @relation("AttendanceRegularizationRejectedBy", fields: [rejectedById], references: [id])
+
+  approverType LeaveApproverType?
+  approverUserId String?
+  approverRoleId String?
+
+  approvedAt DateTime?
+  rejectedAt DateTime?
+  rejectionReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, userId, status])
+  @@index([tenantId, date])
 }
 
 model Attendance {
@@ -436,6 +631,15 @@ model Attendance {
   date          DateTime // date of attendance
   checkInAt     DateTime?
   checkOutAt    DateTime?
+
+  checkInLat Float?
+  checkInLng Float?
+  checkInAddress String?
+
+  checkOutLat Float?
+  checkOutLng Float?
+  checkOutAddress String?
+
   status        AttendanceStatus @default(PRESENT)
   isLate        Boolean          @default(false)
   workedMinutes Int              @default(0)
@@ -449,13 +653,54 @@ model Attendance {
   isHoliday      Boolean @default(false)
   isWeekOff     Boolean @default(false)
 
+  isOutDuty     Boolean @default(false)
+  outDutyReason String?
+
+  regularizedAt DateTime?
+  regularizedById String?
+  regularizationReason String?
+
+  manuallyUpdatedAt DateTime?
+  manuallyUpdatedById String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  regularizationRequests AttendanceRegularizationRequest[]
 
   @@unique([userId, date])
   @@index([userId, date])
   @@index([tenantId, date])
   @@index([tenantId, status, date])
+}
+
+enum OutDutyStatus {
+  APPROVED
+  CANCELLED
+}
+
+model OutDuty {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  userId String
+  user User @relation(fields: [userId], references: [id])
+
+  markedById String
+  markedBy User @relation("OutDutyMarkedBy", fields: [markedById], references: [id])
+
+  startDate DateTime
+  endDate DateTime
+
+  reason String
+  status OutDutyStatus @default(APPROVED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, userId, startDate, endDate])
 }
 
 enum EmploymentType {
@@ -1022,4 +1267,161 @@ model Payroll {
 
   @@unique([tenantId, userId, month, year])
   @@index([tenantId, userId, month, year])
+}
+
+enum FeedType {
+  POST // manual HR/admin post
+  EVENT // automatically generated from events like work anniversaries, birthdays, etc.
+}
+
+model Feed {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  actorId String? // user who triggered the feed, can be null for system-generated events
+  actor   User?   @relation("FeedActor",fields: [actorId], references: [id])
+
+  subjectedUserId String? // user related to the feed event, e.g., the employee having a work anniversary
+  subjectedUser   User?   @relation("FeedSubjectUser",fields: [subjectedUserId], references: [id])
+
+  departmentId String? // if feed is related to a department event
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  type FeedType
+
+  content String? // text content of the feed
+  metadata Json? // additional data like event type, user mentions, etc.
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comments FeedComment[]
+  reactions FeedReaction[]
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, departmentId])
+  @@index([tenantId, type])
+}
+
+model FeedComment {
+  id String @id @default(uuid())
+
+  feedId String
+  feed   Feed   @relation(fields: [feedId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  content String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([feedId])
+  @@index([userId])
+}
+
+// Reaction to feed posts, e.g., likes, emojis, etc.
+enum ReactionType {
+  LIKE
+  LOVE
+  CLAP
+  CELEBRATE
+}
+
+model FeedReaction {
+  id String @id @default(uuid())
+
+  feedId String
+  feed   Feed   @relation(fields: [feedId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  type ReactionType
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([feedId, userId]) // one reaction per user per feed
+}
+
+
+enum ResignationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  CANCELLED
+  COMPLETED
+}
+
+
+model ResignationApprovalPolicy {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  name String
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  designationId String?
+  designation   Designation? @relation(fields: [designationId], references: [id])
+
+  approverType LeaveApproverType
+
+  userId String?
+  user   User? @relation("ResignationPolicySpecificUser", fields: [userId], references: [id])
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId, departmentId, designationId, isActive])
+}
+
+model ResignationRequest {
+  id String @id @default(uuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  userId String
+  user   User @relation("ResignationRequester", fields: [userId], references: [id])
+
+  reason String
+
+  preferredLastWorkingDate DateTime?
+  approvedLastWorkingDate  DateTime?
+
+  status ResignationStatus @default(PENDING)
+
+  approverType   LeaveApproverType?
+  approverUserId String?
+
+  approvedById String?
+  approvedBy   User? @relation("ResignationApprovedBy", fields: [approvedById], references: [id])
+
+  rejectedById String?
+  rejectedBy   User? @relation("ResignationRejectedBy", fields: [rejectedById], references: [id])
+
+  adminRemarks String?
+
+  rejectedAt DateTime?
+  approvedAt DateTime?
+  withdrawnAt DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, userId, status])
+  @@index([tenantId, status])
 }

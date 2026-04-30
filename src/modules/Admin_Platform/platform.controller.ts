@@ -657,3 +657,57 @@ export const rejectTenant = async (req: Request, res: Response) => {
       });
   }
 }
+
+
+/** ----- Platform general settings -------- */
+// export const upsertPlatformSettings = async (req: Request, res: Response) => {
+//   try {
+//       const { key, value } = req.body;
+//       let PLATFORM_SETTING_TENANT_ID = null;
+//       if(!key || !value) {
+//           return res.status(400).json({
+//               status: false,
+//               message: "Key and value are required."
+//           });
+//       }
+
+//       const settings = await prisma.setting.upsert({
+//       where: {
+//         tenantId_key: {
+//           tenantId: PLATFORM_SETTING_TENANT_ID!,
+//           key
+//         }
+//       },
+//       update: { value },
+//       create: {
+//         tenantId: PLATFORM_SETTING_TENANT_ID!,
+//         key,
+//         value
+//       }
+//     });
+
+//       res.status(200).json({
+//         status: true,
+//         message: "Platform settings updated successfully.",
+//         data: settings
+//       });
+//   } catch (error: any) {
+//     return res.status(500).json({
+//       status: false,
+//       message: "An error occurred while updating platform settings.",
+//       error: error.message || "Internal Server Error"
+//     });
+//   }
+// }
+
+// export const getPlatformSettings = async (req: Request, res: Response) => {
+//   try {
+    
+//   } catch (error: any) {
+//     return res.status(500).json({
+//       status: false,
+//       message: "An error occurred while fetching platform settings.",
+//       error: error.message || "Internal Server Error"
+//     });
+//   }
+// }
