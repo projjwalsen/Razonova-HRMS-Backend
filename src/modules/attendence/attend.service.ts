@@ -1179,6 +1179,80 @@ export class AttendService {
         });
     }
 
+    static async getPendingRegularizationApprovals(actor: any) {
+        if (!actor?.tenantId) {
+            throw new Error("Actor tenant context missing");
+        }
+
+        const requests = await prisma.attendanceRegularizationRequest.findMany({
+            where: {
+            tenantId: actor.tenantId,
+            status: "PENDING"
+            },
+            include: {
+            user: {
+                select: {
+                id: true,
+                name: true,
+                email: true,
+                managerId: true,
+                departmentId: true,
+                designationId: true,
+                department: {
+                    select: {
+                    id: true,
+                    name: true,
+                    managerId: true
+                    }
+                },
+                designation: {
+                    select: {
+                    id: true,
+                    name: true
+                    }
+                },
+                employeeProfile: {
+                    select: {
+                    photoUrl: true,
+                    employeeCode: true
+                    }
+                }
+                }
+            },
+            attendance: true,
+            approvedBy: {
+                select: {
+                id: true,
+                name: true,
+                email: true
+                }
+            },
+            rejectedBy: {
+                select: {
+                id: true,
+                name: true,
+                email: true
+                }
+            }
+            },
+            orderBy: {
+            createdAt: "desc"
+            }
+        });
+
+        const allowedRequests = [];
+
+        for (const request of requests) {
+            const canApprove = await this.canApproveRegularization(actor, request);
+
+            if (canApprove) {
+            allowedRequests.push(request);
+            }
+        }
+
+        return allowedRequests;
+    }
+
     private static async canApproveRegularization(actor: any, request: any) {
         const requester = request.user;
 

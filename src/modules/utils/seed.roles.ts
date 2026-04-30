@@ -63,7 +63,9 @@ export async function syncDefaultRolePermissions(tx: any, tenantId: string) {
         "ATTENDANCE:CHECK_OUT",
         "PAYROLL:READ_SELF",
         "PAYROLL:PAYSLIP_PREVIEW_SELF",
-        "PAYROLL:PAYSLIP_DOWNLOAD_SELF"
+        "PAYROLL:PAYSLIP_DOWNLOAD_SELF",
+        "RESIGNATION:SUBMIT",
+        "RESIGNATION:VIEW"
       ];
     } else {
       continue;

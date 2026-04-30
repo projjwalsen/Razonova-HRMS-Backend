@@ -1024,6 +1024,91 @@ export const getRegularizationPolicies = async (req: Request, res: Response) => 
   }
 };
 
+
+/**
+ * @swagger
+ * /attendance/regularization/pending-approvals:
+ *   get:
+ *     tags:
+ *       - attendance
+ *     summary: Get pending attendance regularization approvals
+ *     description: Fetch pending regularization requests that the logged-in approver is allowed to approve/reject based on the configured regularization policy.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Pending attendance regularization approvals fetched successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: true
+ *               message: "Pending attendance regularization approvals fetched successfully"
+ *               data:
+ *                 - id: "regularization_request_uuid"
+ *                   tenantId: "tenant_uuid"
+ *                   userId: "employee_uuid"
+ *                   attendanceId: "attendance_uuid"
+ *                   date: "2026-04-29T00:00:00.000Z"
+ *                   requestedCheckInAt: "2026-04-29T09:15:00.000Z"
+ *                   requestedCheckOutAt: "2026-04-29T18:10:00.000Z"
+ *                   reason: "Forgot to check in due to network issue"
+ *                   status: "PENDING"
+ *                   approverType: "COMPANY_ADMIN"
+ *                   approverUserId: null
+ *                   approvedAt: null
+ *                   rejectedAt: null
+ *                   createdAt: "2026-04-29T10:00:00.000Z"
+ *                   user:
+ *                     id: "employee_uuid"
+ *                     name: "Rahul Sharma"
+ *                     email: "rahul@company.com"
+ *                     managerId: "manager_uuid"
+ *                     departmentId: "department_uuid"
+ *                     designationId: "designation_uuid"
+ *                     department:
+ *                       id: "department_uuid"
+ *                       name: "Engineering"
+ *                       managerId: "manager_uuid"
+ *                     designation:
+ *                       id: "designation_uuid"
+ *                       name: "Backend Developer"
+ *                     employeeProfile:
+ *                       photoUrl: "https://example.com/photo.jpg"
+ *                       employeeCode: "EMP001"
+ *                   attendance:
+ *                     id: "attendance_uuid"
+ *                     date: "2026-04-29T00:00:00.000Z"
+ *                     checkInAt: null
+ *                     checkOutAt: null
+ *                     status: "ABSENT"
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Failed to fetch pending regularization approvals
+ */
+export const getPendingRegularizationApprovals = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const actor = (req as any).user;
+
+    const result = await AttendService.getPendingRegularizationApprovals(actor);
+
+    return res.status(200).json({
+      status: true,
+      message: "Pending attendance regularization approvals fetched successfully",
+      data: result
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch pending regularization approvals",
+      error: error.message
+    });
+  }
+};
+
 /**
  * @swagger
  * /attendance/regularization/request:

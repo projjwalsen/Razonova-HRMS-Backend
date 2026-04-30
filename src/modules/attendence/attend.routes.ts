@@ -109,6 +109,12 @@ router.post(
   attendController.createRegularizationRequest
 );
 
+router.get(
+  "/regularization/pending-approvals",
+  checkPermission("ATTENDANCE:CONFIGURE"),
+  attendController.getPendingRegularizationApprovals
+);
+
 router.patch(
   "/regularization/:requestId/approve",
   checkPermission("ATTENDANCE:CONFIGURE"),

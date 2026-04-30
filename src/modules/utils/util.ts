@@ -110,3 +110,12 @@ export function isFirstDayOfYearInTimezone(timezone: string, now: Date = new Dat
   const zoned = toZonedTime(now, timezone);
   return zoned.getMonth() === 0 && zoned.getDate() === 1;
 }
+
+export const escapeHtml = (value: any) => {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};
