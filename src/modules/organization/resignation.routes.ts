@@ -1,7 +1,9 @@
 import { Router } from "express";
 import * as resignationController from "./resignation.controller";
+import { auth, checkTenantApproval } from "../../core/middleware/auth";
 
 const router = Router();
+router.use(auth, checkTenantApproval)
 
 router.post("/policy", resignationController.upsertResignationApprovalPolicy);
 router.get("/policy", resignationController.getResignationApprovalPolicies);

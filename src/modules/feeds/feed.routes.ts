@@ -15,7 +15,7 @@ router.get("/feeds", feedController.getFeed);
 
 router.post("/:feedId/comments", feedController.addFeedComment);
 
-router.post("/:feedId/reactions", feedController.toggleFeedReaction);
+router.post("/:feedId/reactions/toggle", feedController.toggleFeedReaction);
 
 
 export default router;

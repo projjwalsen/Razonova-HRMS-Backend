@@ -171,40 +171,56 @@ export class FeedService {
     }
 
     static async addComment(actor: any, feedId: string, comment: string) {
-        if(!actor.tenantId) {
+        if (!actor?.tenantId) {
             throw new Error("Tenant context missing for adding comment");
         }
-        if(!comment) {
+
+        if (!comment?.trim()) {
             throw new Error("Comment content is required");
+        }
+
+        const actorUser = await prisma.user.findFirst({
+            where: {
+                id: actor.id,
+                tenantId: actor.tenantId,
+                isActive: true
+            },
+            select: {
+                id: true,
+                departmentId: true
+            }
+        });
+
+        if (!actorUser) {
+            throw new Error("User not found");
         }
 
         const feed = await prisma.feed.findFirst({
             where: {
-                id: feedId,
-                tenantId: actor.tenantId,
+            id: feedId,
+            tenantId: actor.tenantId,
                 OR: [
                     { departmentId: null },
-                    { departmentId: actor.departmentId || undefined }
+                    { departmentId: actorUser.departmentId }
                 ]
             }
         });
 
-        if(!feed) {
+        if (!feed) {
             throw new Error("Feed post not found or not accessible");
         }
-        const content = comment.trim();
 
         return prisma.feedComment.create({
             data: {
                 feedId,
                 userId: actor.id,
-                content
+                content: comment.trim()
             },
             include: {
                 user: {
                     select: {
-                        id: true,
-                        name: true,
+                    id: true,
+                    name: true,
                         employeeProfile: {
                             select: {
                                 photoUrl: true
@@ -213,12 +229,36 @@ export class FeedService {
                     }
                 }
             }
-        })
+        });
     }
 
-    static async toggleReaction(actor: any, feedId: string, type: ReactionType) {
-        if(!actor.tenantId) {
+    static async toggleReaction(
+        actor: any,
+        feedId: string,
+        type: ReactionType
+    ) {
+        if (!actor?.tenantId) {
             throw new Error("Tenant context missing for toggling reaction");
+        }
+
+        if (!type) {
+            throw new Error("Reaction type is required");
+        }
+
+        const actorUser = await prisma.user.findFirst({
+            where: {
+                id: actor.id,
+                tenantId: actor.tenantId,
+                isActive: true
+            },
+            select: {
+                id: true,
+                departmentId: true
+            }
+        });
+
+        if (!actorUser) {
+            throw new Error("User not found");
         }
 
         const feed = await prisma.feed.findFirst({
@@ -227,12 +267,12 @@ export class FeedService {
                 tenantId: actor.tenantId,
                 OR: [
                     { departmentId: null },
-                    { departmentId: actor.departmentId || undefined }
+                    { departmentId: actorUser.departmentId }
                 ]
             }
         });
 
-        if(!feed) {
+        if (!feed) {
             throw new Error("Feed post not found or not accessible");
         }
 
@@ -243,9 +283,9 @@ export class FeedService {
                     userId: actor.id
                 }
             }
-        })
+        });
 
-        if(existingReaction && existingReaction.type === type){
+        if (existingReaction && existingReaction.type === type) {
             await prisma.feedReaction.delete({
                 where: {
                     feedId_userId: {
@@ -258,7 +298,7 @@ export class FeedService {
             return {
                 action: "REMOVED",
                 reaction: null
-            }
+            };
         }
 
         const reaction = await prisma.feedReaction.upsert({
@@ -276,12 +316,12 @@ export class FeedService {
                 userId: actor.id,
                 type
             }
-        })
+        });
 
         return {
             action: existingReaction ? "UPDATED" : "ADDED",
             reaction
-        }
+        };
     }
 
     static async generateBirthdayOrAnniversaryEvents(tenantId: string) {
