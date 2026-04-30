@@ -81,7 +81,7 @@ router.get(
 /** --------- OUT DUTIES ------------------ */
 router.post(
   "/out-duty",
-  checkPermission("ATTENDANCE:MANAGE"),
+  checkPermission("ATTENDANCE:CONFIGURE"),
   attendController.markOutDuty
 );
 
@@ -94,30 +94,30 @@ attendController.getOutDuties
 /** ----------- REGULARIZATION REQUESTS ------------------ */
 router.post(
   "/regularization/policy",
-  checkPermission("ATTENDANCE:MANAGE"),
+  checkPermission("ATTENDANCE:CONFIGURE"),
   attendController.upsertRegularizationPolicy
 );
 
 router.get(
   "/regularization/policy",
-  checkPermission("ATTENDANCE:MANAGE"),
+  checkPermission("ATTENDANCE:READ"),
   attendController.getRegularizationPolicies
 );
 router.post(
   "/regularization/request",
-  checkPermission("ATTENDANCE:MANAGE"),
+  checkPermission("ATTENDANCE:CONFIGURE"),
   attendController.createRegularizationRequest
 );
 
 router.patch(
   "/regularization/:requestId/approve",
-  checkPermission("ATTENDANCE:MANAGE"),
+  checkPermission("ATTENDANCE:CONFIGURE"),
   attendController.approveRegularizationRequest
 );
 
 router.patch(
   "/regularization/:requestId/reject",
-  checkPermission("ATTENDANCE:MANAGE"),
+  checkPermission("ATTENDANCE:CONFIGURE"),
   attendController.rejectRegularizationRequest
 );
 export default router;
