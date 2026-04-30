@@ -16,6 +16,7 @@ type AttendanceResolvedDay = {
     isPaidLeave?: boolean;
     isHoliday?: boolean;
     isWeekOff?: boolean;
+    isOutDuty?: boolean;
     remarks?: string | null;
 }
 
