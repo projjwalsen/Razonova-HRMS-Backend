@@ -9,6 +9,7 @@ import AttendRoute from "../attendence/attend.routes";
 import LeaveRoute from "../leave/leave.routes";
 import PayrollRoute from "../payroll/payroll.routes"
 import AnnouncementRoute from "../feeds/feed.routes";
+import ResignationRoute from "./resignation.routes";
 
 const router = Router();
 
@@ -18,6 +19,7 @@ router.use("/users", UserRoute);
 router.use("/attendance", AttendRoute);
 router.use("/leave", LeaveRoute);
 router.use("/payroll", PayrollRoute);
+router.use("/resignations", ResignationRoute);
 router.use("/feed-wall", AnnouncementRoute)
 
 const upload = createFileUpload({
