@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import { seedTenantRoles, syncDefaultRolePermissions } from "../utils/seed.roles";
 import { forgotPasswordService, resetPasswordService, verifyOtpService } from "./auth.service";
+import { provisionTenantAfterSignup } from "./provision.service";
 
 /**
  * @swagger
@@ -238,68 +239,18 @@ export const signup = async (req: Request, res: Response) => {
 
             return { tenant, user };
         });
-        await seedTenantRoles(prisma, result.tenant.id);
-        await syncDefaultRolePermissions(prisma, result.tenant.id);
-        // 6. Assign free plan
-
-        // 🔹 Transaction 2: Tenant Setup / Provisioning
-        await prisma.$transaction(async (tx) => {
-            // 1. Create role
-            const roles = await tx.role.findMany({
-                where: {
-                    tenantId: result.tenant.id,
-                    type: "TENANT",
-                    name: {
-                        in: ["COMPANY_ADMIN", "EMPLOYEE"]
-                    }
-                },
-                select: {
-                    id: true,
-                    name: true
-                }
-            })
-            const adminRole = roles.find(r => r.name === "COMPANY_ADMIN");
-            const empRole = roles.find(r => r.name === "EMPLOYEE");
-
-            if(!adminRole || !empRole) {
-                throw new Error("Failed to find required roles");
-            }
-            // --- End permission sync ---
-
-            // 2. Create department
-            const hrDepartment = await tx.department.create({
-                data: {
-                    name: "HR",
-                    tenantId: result.tenant.id,
-                },
-            });
-
-            // 3. Create designation
-            const hrDesignation = await tx.designation.create({
-                data: {
-                    name: "HR Manager",
-                    tenantId: result.tenant.id,
-                    departmentId: hrDepartment.id,
-                },
-            });
-
-            // 4. Update user with dept + designation
-            await tx.user.update({
-                where: { id: result.user.id },
-                data: {
-                    departmentId: hrDepartment.id,
-                    designationId: hrDesignation.id,
-                },
-            });
-
-            await tx.userRole.createMany({
-                data: [
-                    { userId: result.user.id, roleId: adminRole.id },
-                    { userId: result.user.id, roleId: empRole.id }
-                ],
-                skipDuplicates: true
-            });
-        });
+        
+       
+        // 6. Provision default roles, permissions, and assign free trial subscription
+        try {
+            await provisionTenantAfterSignup(
+                result.tenant.id, 
+                result.user.id, 
+                companyName
+            );
+        } catch (error) {
+            console.error("Provisioning failed, can retry later:", error);
+        }
 
         /* Generate SignIn token */
         const token = jwt.sign(

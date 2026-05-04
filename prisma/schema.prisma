@@ -195,7 +195,7 @@ enum HolidayRegionType {
 
 model Organization {
   id       String @id @default(uuid())
-  tenantId String
+  tenantId String @unique
   tenant   Tenant @relation(fields: [tenantId], references: [id])
 
   name        String
