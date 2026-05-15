@@ -591,9 +591,6 @@ export const approveTenant = async (req: Request, res: Response) => {
         data: { status: "APPROVED" }
       });
 
-      await seedTenantRoles(tx, tenantId);
-      await syncDefaultRolePermissions(tx, tenantId);
-
       return tenant;
     });
     res.status(200).json({
